@@ -1,0 +1,97 @@
+First author,Year,combo,interaction,measure,measure direction,species,organism,body plan,phylum,note
+Ahsanullah,1988,CdCu,synergism,,,,amphipod,multicellular,Arthropoda,Weltje reference
+Ahsanullah,1988,CdZn,additivity,,,,amphipod,multicellular,Arthropoda,Weltje reference
+Ahsanullah,1988,CuZn,synergism,,,,amphipod,multicellular,Arthropoda,Weltje reference
+Bodar,1989,CdZn,antagonism,,,,flea,multicellular,Arthropoda,thesis; can't find original
+Cremazy,2018,CdCu,antagonism,individual growth rate,positive,L. stagnalis,snail,multicellular,Mollusca,additivity under IA
+Cremazy,2018,CdNi,synergism,individual growth rate,positive,L. stagnalis,snail,multicellular,Mollusca,synergism under IA 
+Cremazy,2018,CdZn,antagonism,individual growth rate,positive,L. stagnalis,snail,multicellular,Mollusca,antagonism under IA
+Cremazy,2018,CuNi,antagonism,individual growth rate,positive,L. stagnalis,snail,multicellular,Mollusca,synergism under IA 
+Cremazy,2018,CuZn,antagonism,individual growth rate,positive,L. stagnalis,snail,multicellular,Mollusca,additivity under IA
+Cremazy,2018,NiZn,antagonism,individual growth rate,positive,L. stagnalis,snail,multicellular,Mollusca,additivity under IA
+Franklin,2002,CdCu,synergism,population growth rate,positive,Chlorella,Chlorella,unicellular,Alga,
+Franklin,2002,CdZn,antagonism,population growth rate,positive,Chlorella,Chlorella,unicellular,Alga,
+Franklin,2002,CuZn,antagonism,population growth rate,positive,Chlorella,Chlorella,unicellular,Alga,
+Gao,2020,CdCu,antagonism,population growth rate,positive,M. aeruginosa,cyanobacteria,unicellular,Bacteria,
+Gao,2018,CdCu,synergism,survival,positive,D. rerio,zebrafish,multicellular,Vertebrata,
+Gao,2020,CdZn,additivity,population growth rate,positive,M. aeruginosa,cyanobacteria,unicellular,Bacteria,
+Gao,2020,CuZn,synergism,population growth rate,positive,M. aeruginosa,cyanobacteria,unicellular,Bacteria,
+Gao,2018,CuZn,additivity,survival,positive,D. rerio,zebrafish,multicellular,Vertebrata,
+Gopalapillai,2015,CdCu,antagonism,root growth,positive,L. minor,duckweed,multicellular,Plant,
+Gopalapillai,2015,CdNi,antagonism,root growth,positive,L. minor,duckweed,multicellular,Plant,
+Gopalapillai,2015,CuNi,antagonism,root growth,positive,L. minor,duckweed,multicellular,Plant,
+Ince,1999,CoCu,synergism,fluorescence,positive,V. fischeri,Vibrio,unicellular,Bacteria,
+Ince,1999,CoCu,antagonism,root growth,positive,L. minor,duckweed,multicellular,Plant,
+Ince,1999,CoZn,additivity,fluorescence,positive,V. fischeri,Vibrio,unicellular,Bacteria,
+Ince,1999,CoZn,additivity/antagonism,root growth,positive,L. minor,duckweed,multicellular,Plant,
+Ince,1999,CuZn,antagonism,fluorescence,positive,V. fischeri,Vibrio,unicellular,Bacteria,
+Ince,1999,CuZn,antagonism,root growth,positive,L. minor,duckweed,multicellular,Plant,
+Kahn,2025,CdCo,additivity,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CdCu,synergism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CdMn,antagonism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CdNi,antagonism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CdZn,additivity,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CoCu,synergism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CoMn,antagonism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CoNi,antagonism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CoZn,additivity,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CuMn,antagonism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CuNi,synergism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,CuZn,synergism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,MnNi,antagonism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,MnZn,antagonism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Kahn,2025,NiZn,antagonism,population growth rate,positive,S. cerevisiae,yeast,unicellular,Fungi,
+Korthals,1997,CuZn,additivity/antagonism,,,,nematode,multicellular,Nematoda,Weltje reference
+Kraak,1993,CdCu,antagonism,,,,mussel,multicellular,Mollusca,Weltje reference
+Kraak,1994,CdCu,synergism,,,,mussel,multicellular,Mollusca,Weltje reference
+Kraak,1994,CdZn,additivity,,,,mussel,multicellular,Mollusca,Weltje reference
+Kraak,1994,CuZn,antagonism,,,,mussel,multicellular,Mollusca,Weltje reference
+Liu,2015,CdCu,synergism,root growth,positive,L. sativa,lettuce,multicellular,Plant,
+Liu,2015,CdNi,antagonism,root growth,positive,L. sativa,lettuce,multicellular,Plant,
+Liu,2015,CuNi,synergism,root growth,positive,L. sativa,lettuce,multicellular,Plant,
+Lock,2002,CdCu,additivity,reproduction,positive,E. albidus,potworm,multicellular,Annelida,"they don't make their own conclusions about S/A, so these are inferred from the graphs; actually it looks like they say none of the interaction terms are significant"
+Lock,2002,CdZn,additivity/synergism,reproduction,positive,E. albidus,potworm,multicellular,Annelida,
+Lock,2002,CuZn,antagonism,reproduction,positive,E. albidus,potworm,multicellular,Annelida,
+Lynch,2016,CuNi,synergism,mortality,negative,P. promelas,minnow,multicellular,Vertebrata,
+Lynch,2016,CuZn,synergism,mortality,negative,P. promelas,minnow,multicellular,Vertebrata,
+Lynch,2016,NiZn,synergism,mortality,negative,P. promelas,minnow,multicellular,Vertebrata,
+Meyer,2015,CdCu,additivity/synergism,mortality,negative,D. magna,daphnia,multicellular,Arthropoda,
+Meyer,2015,CdZn,antagonism,mortality,negative,D. magna,daphnia,multicellular,Arthropoda,
+Meyer,2015,CuZn,synergism,mortality,negative,D. magna,daphnia,multicellular,Arthropoda,
+Migula,1989,CdZn,antagonism,,,,cricket,multicellular,Arthropoda,Weltje reference
+Nagai,2016,CdCu,antagonism,fluorescence,positive,N. pelliculosa,diatom,unicellular,Alga,synergism under IA 
+Nagai,2016,CdNi,antagonism,population growth rate,positive,N. pelliculosa,diatom,unicellular,Alga,antagonism under IA
+Nagai,2016,CdZn,antagonism,population growth rate,positive,N. pelliculosa,diatom,unicellular,Alga,additivity under IA
+Nagai,2016,CuNi,antagonism,population growth rate,positive,N. pelliculosa,diatom,unicellular,Alga,synergism under IA 
+Nagai,2016,CuZn,antagonism,population growth rate,positive,N. pelliculosa,diatom,unicellular,Alga,synergism under IA 
+Nagai,2016,NiZn,synergism,population growth rate,positive,N. pelliculosa,diatom,unicellular,Alga,synergism under IA 
+Negilski,1981,CdCu,additivity,,,,shrimp,multicellular,Arthropoda,Weltje reference
+Negilski,1981,CdZn,synergism,,,,shrimp,multicellular,Arthropoda,Weltje reference
+Negilski,1981,CuZn,antagonism,,,,shrimp,multicellular,Arthropoda,Weltje reference
+Nweke,2018,CdZn,additivity,dehydrogensase activity,positive,P. fluorescens,P. fluorescens,unicellular,Bacteria,
+Nweke,2018,CoNi,additivity,dehydrogensase activity,positive,P. fluorescens,P. fluorescens,unicellular,Bacteria,
+Nys,2016,NiZn,antagonism,reproduction,positive,C. dubia,daphnia,multicellular,Arthropoda,
+Otitoloju,2002,CdCu,antagonism,mortality,negative,T. fuscatus,snail,multicellular,Mollusca,
+Otitoloju,2002,CdZn,antagonism,mortality,negative,T. fuscatus,snail,multicellular,Mollusca,
+Otitoloju,2002,CuZn,additivity,mortality,negative,T. fuscatus,snail,multicellular,Mollusca,
+Preston,2002,CdCu,additivity,fluorescence,positive,E. coli,E. coli,unicellular,Bacteria,
+Preston,2002,CdCu,synergism,fluorescence,positive,P. fluorescens,P. fluorescens,unicellular,Bacteria,
+Preston,2002,CdZn,additivity,fluorescence,positive,P. fluorescens,P. fluorescens,unicellular,Bacteria,
+Preston,2002,CdZn,synergism,fluorescence,positive,E. coli,E. coli,unicellular,Bacteria,
+Preston,2002,CuZn,additivity,fluorescence,positive,P. fluorescens,P. fluorescens,unicellular,Bacteria,
+Preston,2002,CuZn,synergism,fluorescence,positive,E. coli,E. coli,unicellular,Bacteria,
+Utgikar,2004,CuZn,synergism,fluorescence,positive,V. fischeri,Vibrio,unicellular,Bacteria,
+Van Capelleveen,1987,CdZn,additivity,,,,isopod,multicellular,Arthropoda,thesis; can't find original
+Van Getsel,1997,CdZn,additivity/antagonism,,,,springtail,multicellular,Arthropoda,Weltje reference
+Versieren,2017,CdCu,additivity,root growth,positive,H. vulgare,barley,multicellular,Plant,
+Versieren,2016,CdNi,additivity,root growth,positive,H. vulgare,barley,multicellular,Plant,
+Versieren,2016,CdZn,additivity/antagonism,root growth,positive,H. vulgare,barley,multicellular,Plant,
+Versieren,2017,CdZn,antagonism,root growth,positive,H. vulgare,barley,multicellular,Plant,
+Versieren,2016,NiZn,antagonism,root growth,positive,H. vulgare,barley,multicellular,Plant,
+Vogel,1988,CdZn,antagonism,,,,beetle,multicellular,Arthropoda,"in German, can't find original"
+Weltje,1998,CdCu,antagonism,reproduction,positive,,earthworm,multicellular,Annelida,
+Weltje,1998,CdZn,antagonism,reproduction,positive,,earthworm,multicellular,Annelida,
+Weltje,1998,CuZn,antagonism,reproduction,positive,,earthworm,multicellular,Annelida,
+Xu,2011,CdCu,additivity,abnormal development,negative,S. intermedius,urchin,multicellular embryo,Echinodermata,
+Xu,2011,CdZn,antagonism,abnormal development,negative,S. intermedius,urchin,multicellular embryo,Echinodermata,
+Xu,2011,CuZn,antagonism,abnormal development,negative,S. intermedius,urchin,multicellular embryo,Echinodermata,
