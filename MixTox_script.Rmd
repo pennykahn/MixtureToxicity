@@ -1,0 +1,2458 @@
+---
+title: "Mixture Toxicity"
+output: html_document
+date: '2022-09-20'
+---
+
+# Loading libraries
+```{r libraries}
+library(tidyverse)
+library(sjmisc)
+library(janitor)
+library(tibble)
+library(cowplot)
+library(stats) 
+library(readr)
+library(grid)
+library(gridExtra)
+library(ggplotify)
+library(plotrix)
+library(ggnewscale)
+library(magick)
+library(pdftools)
+library(viridis)
+library(SimplyAgree)
+#library(rgl)
+source("DataInput/bioscreen_functions.R")
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+```
+
+# Setting color palettes
+```{r}
+combo_alphabet_palette <- c("#9D8F8B","#90B927","#FE878B","#FFC60C","#D48D8B","#3DC19D","#8A58D5","#2BA735","#7282FF","#55D0E6","#CBDF1C","#3C99DB","#FEB380","#D37AFF","#BB9B56")
+single_palette <- c("#FF9A17", "#3B83FF", "#3EFF38", "#FD73FF", "#FFD000",  "#A880FF")
+single_palette_reverse <- c("#A880FF","#FFD000","#FD73FF","#3EFF38","#3B83FF","#FF9A17")
+bw_palette_4conc <- c("#AAAAAA", "#808080", "#555555", "#2B2B2B")
+bw_palette_5conc <- c("#AAAAAA","#888888","#666666","#434343","#212121")
+```
+
+# Data manipulation
+##trial 1
+```{r}
+codes1 <- read.csv("DataInput/BIO1_combo_SoT_codes.csv")
+codes2 <- read.csv("DataInput/BIO2_combo_SoT_codes.csv")
+data1 <- read.csv("DataInput/BIO1_SoT_220922.csv")
+data2 <- read.csv("DataInput/BIO2_SoT_220922.csv")
+
+#transpose "data" so it can be bound with codes
+#make first row into column names
+wide_data1 <- data1 %>% 
+  rotate_df() %>% 
+  row_to_names(row_number = 1) %>% 
+  rownames_to_column("well")
+wide_data2 <- data2 %>% 
+  rotate_df() %>% 
+  row_to_names(row_number = 1) %>% 
+  rownames_to_column("well")
+
+#make data long
+long_data1 <- wide_data1 %>% 
+  gather("time", "OD", 2:193)
+long_data2 <- wide_data2 %>% 
+  gather("time", "OD", 2:193)
+  
+#bind data and codes
+df1 <- full_join(codes1, wide_data1) %>% 
+  arrange(well)
+df2 <- full_join(codes2, wide_data2) %>% 
+  arrange(well)
+
+#add qualifier so well names are distinct between the two machines
+df1$well<-sub("^", "BIO1", df1$well)
+df2$well<-sub("^", "BIO2", df2$well)
+
+df3_1 <- rbind(df1, df2)
+
+
+
+code_df <- df3_1 %>% 
+  select(1:5)
+
+for(r in 1:nrow(df3_1)){
+  temp = as.numeric(df3_1[r, 6:ncol(df3_1)]) # depending if the file is imported... make sure that the number is the column you want to start measuring OD
+  time = seq(0.25, length(temp)/4, by = 0.25)
+  growth <- spline.slope(time, temp)
+  t <- spline(time, temp)
+  code_df$initOD[r] <- mean(temp[3:8]) # Arbitrary choice, first between 45 min and 2.5 hours
+  #code_df$OD_maxSlope[r] <- temp[which(time == t)]
+  code_df$finalOD[r] <- mean(temp[(length(temp)-5):length(temp)])
+  code_df$changeOD[r] <- max(temp) - min(temp)
+  code_df$maxSlope[r] <- growth
+  #code_df$time_maxSlope[r] <- t
+  code_df$finalTime[r] <- length(temp)/4
+}  
+
+
+#make a new dataframe where the slopes are averaged across replicates
+max_growth1_wells <- code_df %>% 
+  select(!c(finalTime)) %>% 
+  arrange(metal, conc, yeast, replicate)
+max_growth1 <- code_df %>% 
+  select(!c(well, finalTime)) %>% 
+  arrange(metal, conc, yeast, replicate) %>% 
+  ## There is an extra row of CdMn/conc1/trial1. Next line removes it
+  filter(!(metal=="CdMn" & conc==1 & replicate==1 & maxSlope>0.24))
+  
+trial1_unavg <- max_growth1 %>% mutate(trial="one") %>% filter(yeast!="BLANK")
+  
+averages_trial1 <- max_growth1 %>% 
+  filter(yeast!="BLANK") %>% 
+  group_by(metal, conc) %>%
+  mutate(Mean_r = mean(maxSlope),
+         SE_r = std.error(maxSlope),
+         Mean_OD = mean(finalOD-initOD),
+         SE_OD = std.error(finalOD-initOD),
+         Mean_changeOD = mean(changeOD)) %>% 
+  arrange(metal, conc) %>% 
+  select(metal, conc, Mean_r, SE_r, Mean_OD, SE_OD, Mean_changeOD) %>%
+  distinct() %>%
+  mutate(trial="one")
+```
+
+##trial 2
+```{r}
+codes1 <- read.csv("DataInput/BIO1_combo_SoT_codes_trial3.csv")
+codes2 <- read.csv("DataInput/BIO2_combo_SoT_codes_trial3.csv")
+data1 <- read.csv("DataInput/BIO1_041022.csv")
+data2 <- read.csv("DataInput/BIO2_041022.csv")
+
+#transpose "data" so it can be bound with codes
+#make first row into column names
+wide_data1 <- data1 %>% 
+  rotate_df() %>% 
+  row_to_names(row_number = 1) %>% 
+  rownames_to_column("well")
+wide_data2 <- data2 %>% 
+  rotate_df() %>% 
+  row_to_names(row_number = 1) %>% 
+  rownames_to_column("well")
+
+#make data long
+long_data1 <- wide_data1 %>% 
+  gather("time", "OD", 2:193)
+long_data2 <- wide_data2 %>% 
+  gather("time", "OD", 2:193)
+  
+#bind data and codes
+df1 <- full_join(codes1, wide_data1) %>% 
+  arrange(well)
+df2 <- full_join(codes2, wide_data2) %>% 
+  arrange(well)
+
+#add qualifier so well names are distinct between the two machines
+df1$well<-sub("^", "BIO1", df1$well)
+df2$well<-sub("^", "BIO2", df2$well)
+
+df3_2 <- rbind(df1, df2)
+
+code_df <- df3_2 %>% 
+  select(1:5)
+
+for(r in 1:nrow(df3_2)){
+  temp = as.numeric(df3_2[r, 6:ncol(df3_2)]) # depending if the file is imported... make sure that the number is the column you want to start measuring OD
+  time = seq(0.25, length(temp)/4, by = 0.25)
+  growth <- spline.slope(time, temp)
+  t <- spline(time, temp)
+  code_df$initOD[r] <- mean(temp[3:8]) # Arbitrary choice, first between 45 min and 2.5 hours
+  #code_df$OD_maxSlope[r] <- temp[which(time == t)]
+  code_df$finalOD[r] <- mean(temp[(length(temp)-5):length(temp)])
+  code_df$changeOD[r] <- max(temp) - min(temp)
+  code_df$maxSlope[r] <- growth
+  #code_df$time_maxSlope[r] <- t
+  code_df$finalTime[r] <- length(temp)/4
+}  
+
+
+#make a new dataframe where the slopes are averaged across replicates
+max_growth2_wells <- code_df %>% 
+  select(!c(finalTime)) %>% 
+  arrange(metal, conc, yeast, replicate)
+max_growth2 <- code_df %>% 
+  select(!c(well, finalTime)) %>% 
+  arrange(metal, conc, yeast, replicate)
+trial2_unavg <- max_growth2 %>% mutate(trial="two") %>% filter(yeast!="BLANK")
+
+averages_trial2 <- max_growth2 %>% 
+  filter(yeast!="BLANK") %>% 
+  group_by(metal, conc) %>%
+  mutate(Mean_r = mean(maxSlope),
+         SE_r = std.error(maxSlope),
+         Mean_OD = mean(finalOD-initOD), # mean change in OD
+         SE_OD = std.error(finalOD-initOD),
+         Mean_changeOD = mean(changeOD)) %>% # testing new way of mean change in OD
+  arrange(metal, conc) %>% 
+  select(metal, conc, Mean_r, SE_r, Mean_OD, SE_OD, Mean_changeOD) %>%
+  distinct() %>% 
+  mutate(trial="two")
+```
+
+##joining trials 1 and 2
+```{r}
+vgraph_mM <- read.csv("DataInput/vgraph_concs.csv") %>% 
+  pivot_longer(cols=c(trial1_mM, trial2_mM), names_to = "trial", values_to = "mM")
+vgraph_mM$trial <- sub("trial1_mM", "one", vgraph_mM$trial)
+vgraph_mM$trial <- sub("trial2_mM", "two", vgraph_mM$trial)
+
+combodata_unavg <- rbind(trial1_unavg, trial2_unavg) %>% 
+  left_join(vgraph_mM, by = join_by(metal, conc, trial)) %>% 
+  relocate(mM, .after=trial) %>% 
+  arrange(metal, trial, conc, replicate)
+
+combodata_avg <- rbind(averages_trial1, averages_trial2) 
+combodata_avg$conc <- as.character(combodata_avg$conc)
+write_csv(combodata_avg, "DataOutput/vgraph_growthrates_avg.csv")
+```
+## Examining blanks
+```{r}
+blanks1_unavg <- max_growth1 %>% 
+  arrange(metal, conc, yeast, replicate) %>% 
+  filter(yeast=="BLANK") %>% 
+  filter(maxSlope<0.1)
+blanks1 <- blanks1_unavg %>% 
+  group_by(metal) %>% 
+  summarise(avg_blank = mean(maxSlope),
+            SE = std.error(maxSlope))
+
+blanks2_unavg <- max_growth2 %>% 
+  arrange(metal, conc, yeast, replicate) %>% 
+  filter(yeast=="BLANK") %>% 
+filter(maxSlope<0.1)
+blanks2 <- blanks2_unavg %>% 
+  group_by(metal) %>% 
+  summarise(avg_blank = mean(maxSlope),
+            SE = std.error(maxSlope))
+
+blanks_unavg <- rbind(blanks1_unavg,blanks2_unavg) %>% select(c(metal, yeast, maxSlope))
+blanks_unavg %>% write_csv("DataOutput/vgraph_blanks.csv")
+
+blanks1 %>% ggplot(aes(x=metal, y=avg_blank)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=avg_blank-SE, ymax=avg_blank+SE), 
+                width=0.1, position=position_dodge(width=0.7)) +
+  lims(y=c(0,0.3)) +
+  theme_bw()
+
+blanks2 %>% ggplot(aes(x=metal, y=avg_blank)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=avg_blank-SE, ymax=avg_blank+SE), 
+                width=0.1, position=position_dodge(width=0.7)) +
+  lims(y=c(0,0.3)) +
+  theme_bw()
+
+blanks_unavg %>% 
+  ggplot(aes(x=metal, y=maxSlope, color=metal)) +
+  geom_point()+
+  lims(y=c(0,0.3)) +
+  theme_bw() +
+  facet_wrap(~metal)
+```
+# Figure 1
+## fig1A pieces - max growth rates
+```{r}
+#FOR COMPOSITE V-GRAPH
+
+#color gradients determined with hihayk.github.io/scale
+
+# 0 angle, 50% darkness, 50% dark sat, 60% lightness, 75% light sat
+
+a <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="CdCo" | metal=="Co") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_point(size=2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  scale_color_manual(values=c("#DBD1CE", "#BDAFAB", "#9D8F8B", "#776A67", "#514643")) +
+  ylim(0.0,0.341) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness,50% dark sat, 50% lightness,75% light sat
+b <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="CdCu" | metal=="Cu") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#D4F780","#B5DF49","#90B927", "#729810","#506F01")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 60% lightness, 75% light sat
+c <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="CdMn" | metal=="Mn") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#FFBDC0","#FF9B9F","#FE878B","#BF5A5E","#803538")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 24% darkness, 50 dark sat, 25% lightness, 51% light sat
+d <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="CdNi" | metal=="Ni") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#FFED40","#FFDC20","#FFC60C","#C6A600","#8C7F00")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 60% lightness, 75% light sat
+e <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="CdZn" | metal=="Zn") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#F9C7C6","#EBA6A4","#D48D8B","#A66361","#733E3C")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 65% lightness, 25% light sat
+f <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="CoCu" | metal=="Cu") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#96E8D2","#67D7B8","#3DC19D","#219D7B","#0E7156")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 65% lightness, 50% light sat
+g <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="CoMn" | metal=="Mn") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#D3B7FD","#AE82EF","#8A58D5","#6536AC","#421C7A")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 65% lightness, 75% light sat
+h <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="CoNi" | metal=="Ni") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#A6F1AB","#60D36A","#2BA735","#15891E","#06630E")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 65% lightness, 60% light sat
+i <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="CoZn" | metal=="Zn") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#BFC8FF","#92A0FF","#7282FF","#4857BF","#273380")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat,
+j <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="CuMn" | metal=="Mn") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#A1EEFC","#79E1F3","#55D0E6","#32A6BA","#187580")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 0% lightness, 30% light sat
+k <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="CuNi" | metal=="Ni") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#E7F473","#DAEB46","#CBDF1C","#A7BA03","#798000")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 60% lightness, 50% light sat
+l <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="CuZn" | metal=="Zn") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#A1D9FF","#69BAF4","#3C99DB","#1E75B3","#0A5080")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 30% darkness, 50% dark sat, 50% lightness, 50% light sat
+m <- combodata_avg %>% 
+  filter(metal=="Mn" | metal=="MnNi" | metal=="Ni") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#FFD6B0","#FFC494","#FEB380","#D9965F","#B37944")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 60% lightness, 25% light sat
+n <- combodata_avg %>% 
+  filter(metal=="Mn" | metal=="MnZn" | metal=="Zn") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#F0C3FF","#E29CFF","#D37AFF","#A34FBF","#6F2C80")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+# 0 angle, 50% darkness, 50% dark sat, 65% lightness, 75% light sat
+o <- combodata_avg %>% 
+  filter(metal=="Ni" | metal=="NiZn" | metal=="Zn") %>% 
+  ggplot(aes(x=metal,y=Mean_r,color=as.character(conc), shape=as.character(trial))) +
+  #geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  geom_hline(yintercept = 0.3273644, alpha=0.5) +
+  geom_hline(yintercept = 0.0238344, alpha=0.5) +
+  geom_point(size=2) +
+  scale_color_manual(values=c("#F5E1B7","#DEC080","#BB9B56","#967837","#6A521E")) +
+  ylim(0.0,0.34) +
+  theme_light() +
+  theme(legend.position = "none",
+        panel.border=element_rect(color="white"),
+        panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=7),
+        plot.margin=margin(0,0,5,0))
+
+fig1A <- plot_grid(e,d,c,b,a,i,h,g,f,NULL,l,k,j,NULL,NULL,n,m,NULL,NULL,NULL,o,NULL,NULL,NULL,NULL, ncol=5, rel_widths = c(1,1,1,1,1), scale = 0.98)
+fig1A_component <- ggdraw() +
+  draw_plot(fig1A) +
+  draw_line(x=c(0.001,0.001,0.999,0.999,0.001),y=c(0.001,0.999,0.999,0.8,0.8), size=0.2) +
+  draw_line(x=c(0.001,0.8,0.8),y=c(0.6,0.6,0.999), size=0.2) +
+  draw_line(x=c(0.001,0.6,0.6),y=c(0.4,0.4,0.999), size=0.2) +
+  draw_line(x=c(0.001,0.4,0.4),y=c(0.2,0.2,0.999), size=0.2) +
+  draw_line(x=c(0.001,0.2,0.2),y=c(0.001,0.001,0.999), size=0.2) +
+  draw_label("Zn", x=0.1, y=1.03, size=12) +
+  draw_label("Ni", x=0.3, y=1.03, size=12) +
+  draw_label("Mn", x=0.5, y=1.03, size=12) +
+  draw_label("Cu", x=0.7, y=1.03, size=12) +
+  draw_label("Co", x=0.9, y=1.03, size=12) +
+  draw_label("Cd", x=-0.03, y=0.9, size=12) +
+  draw_label("Co", x=-0.03, y=0.7, size=12) +
+  draw_label("Cu", x=-0.03, y=0.5, size=12) +
+  draw_label("Mn", x=-0.03, y=0.3, size=12)+
+  draw_label("Ni", x=-0.03, y=0.1, size=12)
+```
+##calculating delta
+###delta_r
+```{r}
+CdCo <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Co" | metal=="CdCo") %>% 
+  mutate(combo="CdCo") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_r",
+                   metal=="Co" ~ "met2_r",
+                   metal=="CdCo" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CdCu <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Cu" | metal=="CdCu") %>% 
+  mutate(combo="CdCu") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_r",
+                   metal=="Cu" ~ "met2_r",
+                   metal=="CdCu" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CdMn <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Mn" | metal=="CdMn") %>% 
+  mutate(combo="CdMn") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_r",
+                   metal=="Mn" ~ "met2_r",
+                   metal=="CdMn" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CdNi <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Ni" | metal=="CdNi") %>% 
+  mutate(combo="CdNi") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_r",
+                   metal=="Ni" ~ "met2_r",
+                   metal=="CdNi" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CdZn <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Zn" | metal=="CdZn") %>% 
+  mutate(combo="CdZn") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_r",
+                   metal=="Zn" ~ "met2_r",
+                   metal=="CdZn" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CoCu <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="Cu" | metal=="CoCu") %>% 
+  mutate(combo="CoCu") %>% 
+  mutate(component=case_when(metal=="Co" ~ "met1_r",
+                   metal=="Cu" ~ "met2_r",
+                   metal=="CoCu" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CoMn <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="Mn" | metal=="CoMn") %>% 
+  mutate(combo="CoMn") %>% 
+  mutate(component=case_when(metal=="Co" ~ "met1_r",
+                   metal=="Mn" ~ "met2_r",
+                   metal=="CoMn" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CoNi <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="Ni" | metal=="CoNi") %>% 
+  mutate(combo="CoNi") %>% 
+  mutate(component=case_when(metal=="Co" ~ "met1_r",
+                   metal=="Ni" ~ "met2_r",
+                   metal=="CoNi" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CoZn <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="Zn" | metal=="CoZn") %>% 
+  mutate(combo="CoZn") %>% 
+  mutate(component=case_when(metal=="Co" ~ "met1_r",
+                   metal=="Zn" ~ "met2_r",
+                   metal=="CoZn" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CuMn <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="Mn" | metal=="CuMn") %>% 
+  mutate(combo="CuMn") %>% 
+  mutate(component=case_when(metal=="Cu" ~ "met1_r",
+                   metal=="Mn" ~ "met2_r",
+                   metal=="CuMn" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CuNi <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="Ni" | metal=="CuNi") %>% 
+  mutate(combo="CuNi") %>% 
+  mutate(component=case_when(metal=="Cu" ~ "met1_r",
+                   metal=="Ni" ~ "met2_r",
+                   metal=="CuNi" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+CuZn <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="Zn" | metal=="CuZn") %>% 
+  mutate(combo="CuZn") %>% 
+  mutate(component=case_when(metal=="Cu" ~ "met1_r",
+                   metal=="Zn" ~ "met2_r",
+                   metal=="CuZn" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+MnNi <- combodata_avg %>% 
+  filter(metal=="Mn" | metal=="Ni" | metal=="MnNi") %>% 
+  mutate(combo="MnNi") %>% 
+  mutate(component=case_when(metal=="Mn" ~ "met1_r",
+                   metal=="Ni" ~ "met2_r",
+                   metal=="MnNi" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+MnZn <- combodata_avg %>% 
+  filter(metal=="Mn" | metal=="Zn" | metal=="MnZn") %>% 
+  mutate(combo="MnZn") %>% 
+  mutate(component=case_when(metal=="Mn" ~ "met1_r",
+                   metal=="Zn" ~ "met2_r",
+                   metal=="MnZn" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+NiZn <- combodata_avg %>% 
+  filter(metal=="Ni" | metal=="Zn" | metal=="NiZn") %>% 
+  mutate(combo="NiZn") %>% 
+  mutate(component=case_when(metal=="Ni" ~ "met1_r",
+                   metal=="Zn" ~ "met2_r",
+                   metal=="NiZn" ~ "combo_r")) %>% 
+  select(c(trial, combo, conc, component, Mean_r)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_r) %>% 
+  mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
+
+delta_r_df <- rbind(CdCo, CdCu, CdMn, CdNi, CdZn, CoCu, CoMn, CoNi, CoZn, CuMn, CuNi, CuZn, MnNi, MnZn, NiZn)
+delta_r_df %>% write.csv("DataOutput/delta_r_df.csv")
+```
+###delta_OD
+```{r}
+CdCo <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Co" | metal=="CdCo") %>% 
+  mutate(combo="CdCo") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_changeOD",
+                   metal=="Co" ~ "met2_changeOD",
+                   metal=="CdCo" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CdCu <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Cu" | metal=="CdCu") %>% 
+  mutate(combo="CdCu") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_changeOD",
+                   metal=="Cu" ~ "met2_changeOD",
+                   metal=="CdCu" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CdMn <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Mn" | metal=="CdMn") %>% 
+  mutate(combo="CdMn") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_changeOD",
+                   metal=="Mn" ~ "met2_changeOD",
+                   metal=="CdMn" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CdNi <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Ni" | metal=="CdNi") %>% 
+  mutate(combo="CdNi") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_changeOD",
+                   metal=="Ni" ~ "met2_changeOD",
+                   metal=="CdNi" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CdZn <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="Zn" | metal=="CdZn") %>% 
+  mutate(combo="CdZn") %>% 
+  mutate(component=case_when(metal=="Cd" ~ "met1_changeOD",
+                   metal=="Zn" ~ "met2_changeOD",
+                   metal=="CdZn" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CoCu <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="Cu" | metal=="CoCu") %>% 
+  mutate(combo="CoCu") %>% 
+  mutate(component=case_when(metal=="Co" ~ "met1_changeOD",
+                   metal=="Cu" ~ "met2_changeOD",
+                   metal=="CoCu" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CoMn <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="Mn" | metal=="CoMn") %>% 
+  mutate(combo="CoMn") %>% 
+  mutate(component=case_when(metal=="Co" ~ "met1_changeOD",
+                   metal=="Mn" ~ "met2_changeOD",
+                   metal=="CoMn" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CoNi <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="Ni" | metal=="CoNi") %>% 
+  mutate(combo="CoNi") %>% 
+  mutate(component=case_when(metal=="Co" ~ "met1_changeOD",
+                   metal=="Ni" ~ "met2_changeOD",
+                   metal=="CoNi" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CoZn <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="Zn" | metal=="CoZn") %>% 
+  mutate(combo="CoZn") %>% 
+  mutate(component=case_when(metal=="Co" ~ "met1_changeOD",
+                   metal=="Zn" ~ "met2_changeOD",
+                   metal=="CoZn" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CuMn <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="Mn" | metal=="CuMn") %>% 
+  mutate(combo="CuMn") %>% 
+  mutate(component=case_when(metal=="Cu" ~ "met1_changeOD",
+                   metal=="Mn" ~ "met2_changeOD",
+                   metal=="CuMn" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CuNi <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="Ni" | metal=="CuNi") %>% 
+  mutate(combo="CuNi") %>% 
+  mutate(component=case_when(metal=="Cu" ~ "met1_changeOD",
+                   metal=="Ni" ~ "met2_changeOD",
+                   metal=="CuNi" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+CuZn <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="Zn" | metal=="CuZn") %>% 
+  mutate(combo="CuZn") %>% 
+  mutate(component=case_when(metal=="Cu" ~ "met1_changeOD",
+                   metal=="Zn" ~ "met2_changeOD",
+                   metal=="CuZn" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+MnNi <- combodata_avg %>% 
+  filter(metal=="Mn" | metal=="Ni" | metal=="MnNi") %>% 
+  mutate(combo="MnNi") %>% 
+  mutate(component=case_when(metal=="Mn" ~ "met1_changeOD",
+                   metal=="Ni" ~ "met2_changeOD",
+                   metal=="MnNi" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+MnZn <- combodata_avg %>% 
+  filter(metal=="Mn" | metal=="Zn" | metal=="MnZn") %>% 
+  mutate(combo="MnZn") %>% 
+  mutate(component=case_when(metal=="Mn" ~ "met1_changeOD",
+                   metal=="Zn" ~ "met2_changeOD",
+                   metal=="MnZn" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+NiZn <- combodata_avg %>% 
+  filter(metal=="Ni" | metal=="Zn" | metal=="NiZn") %>% 
+  mutate(combo="NiZn") %>% 
+  mutate(component=case_when(metal=="Ni" ~ "met1_changeOD",
+                   metal=="Zn" ~ "met2_changeOD",
+                   metal=="NiZn" ~ "combo_changeOD")) %>% 
+  select(c(trial, combo, conc, component, Mean_changeOD)) %>% 
+  pivot_wider(id_cols=c(trial, combo, conc), names_from = component, values_from = Mean_changeOD) %>% 
+  mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
+
+delta_OD_df <- rbind(CdCo, CdCu, CdMn, CdNi, CdZn, CoCu, CoMn, CoNi, CoZn, CuMn, CuNi, CuZn, MnNi, MnZn, NiZn)
+```
+
+###normality of delta
+```{r}
+#all deltas calculated from each conc
+delta_df_4conc <- delta_r_df %>% filter(!(conc==5))
+norm_unavg_deltas <- delta_df_4conc$delta_r
+
+hist(norm_unavg_deltas, breaks=10,
+     main=NULL, xlab="\u03b4")
+
+qqnorm(norm_unavg_deltas, pch = 1, frame = FALSE,
+       main=NULL)
+qqline(norm_unavg_deltas, col = "steelblue", lwd = 2)
+
+shapiro.test(norm_unavg_deltas)
+
+#deltas averaged across conc in each combo
+delta_r_avg <- delta_df_4conc %>% 
+  group_by(combo) %>% 
+  summarise(avg_delta=mean(delta_r))
+norm_avg_deltas <- delta_r_avg$avg_delta
+
+hist(norm_avg_deltas, breaks=10,
+     main=NULL, xlab="Average \u03b4 (by combo)")
+
+qqnorm(norm_avg_deltas, pch = 1, frame = FALSE,
+       main=NULL)
+qqline(norm_avg_deltas, col = "steelblue", lwd = 2)
+
+shapiro.test(norm_avg_deltas)
+```
+## fig1C - observed deltas
+```{r}
+deltas_avg <- delta_r_df %>% 
+  filter(conc!=5) %>%
+  group_by(combo) %>%  
+  summarise(avg_delta=mean(delta_r), se_delta=std.error(delta_r))
+deltas_unavg_4conc <- delta_r_df %>% 
+  filter(conc!=5) 
+deltas_conc5 <- delta_r_df %>% 
+  filter(conc==5)
+
+fig1C <- deltas_avg %>% 
+  mutate(combo = fct_reorder(combo, -avg_delta)) %>%
+  ggplot(aes(x=combo, y=avg_delta, fill=combo)) +
+  geom_hline(yintercept = 0, color="black", linewidth=0.5, alpha=0.5) +
+  geom_point(aes(color=combo), position=position_dodge(width=0.7), size=6) +
+  scale_color_manual(values = c("#3DC19D","#CBDF1C","#3C99DB","#BB9B56","#7282FF","#90B927", "#D48D8B","#2BA735","#9D8F8B","#FFC60C","#FE878B","#FEB380","#8A58D5","#D37AFF","#55D0E6")) +
+  geom_errorbar(aes(ymin=avg_delta-se_delta, ymax=avg_delta+se_delta), width=0.75, position=position_dodge(width=0.7)) +
+  new_scale_color() +
+  geom_jitter(data=deltas_unavg_4conc, aes(y=delta_r, color=as.character(conc), shape=as.character(trial)), position=position_jitter(0), size=1.5) +
+  scale_color_manual(values=bw_palette_4conc) +
+  geom_point(data=deltas_conc5, aes(y=delta_r), shape=21, color="#242424", fill="transparent", size=1) +
+  labs(x="Metal combination", y="\u03b4") +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle=45, vjust=0.7),
+        #axis.title = element_text(face="bold"),
+        panel.grid.major = element_line(size=0.25),
+        panel.grid.minor = element_blank())
+```
+
+## Fig1_cowplot
+```{r}
+fig1B <- image_read_pdf("DataInput/Fig1B.pdf", density = 200)
+triangle <- image_read("DataInput/triangle-png-28.png", density = 200)
+
+ggdraw() +
+  draw_grob(rectGrob(gp=gpar(col="white"))) +
+  draw_plot(fig1A_component, width = 0.709, height = 0.922, x = 0.04, y = 0.015) +
+  draw_plot(fig1C, width = 0.522, height = 0.55, x = 0.475, y = 0.002) +
+  draw_image(fig1B, scale = 0.394, x = 0.374, y = 0.248) +
+  draw_plot_label("A", x=0, y=0.991) +
+  draw_plot_label("B", x=0.751, y=0.991) +
+  draw_plot_label("C", x=0.47, y=0.555) +
+  draw_label("Concentration level", x=0.395,y=0.3445,size=9) +
+  draw_grob(circleGrob(x=0.345,y=0.315,r=0.007,gp=gpar(fill="#AAAAAA",col="transparent"))) +
+  draw_grob(circleGrob(x=0.345,y=0.2855,r=0.007,gp=gpar(fill="#888888",col="transparent"))) +
+  draw_grob(circleGrob(x=0.345,y=0.256,r=0.007,gp=gpar(fill="#666666",col="transparent"))) +
+  draw_grob(circleGrob(x=0.345,y=0.2265,r=0.007,gp=gpar(fill="#434343",col="transparent"))) +
+  draw_grob(circleGrob(x=0.345,y=0.197,r=0.007,gp=gpar(fill="#212121",col="transparent"))) +
+  draw_label("1", x=0.365, y=0.315, size=9) + draw_label("lowest", x=0.397, y=0.315, size=9) +
+  draw_label("2", x=0.365, y=0.2855, size=9) +
+  draw_label("3", x=0.365, y=0.256, size=9) +
+  draw_label("4", x=0.365, y=0.2265, size=9) +
+  draw_label("5", x=0.365, y=0.197, size=9) + draw_label("highest", x=0.4, y=0.197, size=9) +
+  draw_label("Experimental trial", x=0.39,y=0.1545,size=9) +
+  draw_grob(circleGrob(x=0.345,y=0.125,r=0.007,gp=gpar(fill="black",col="transparent"))) +
+  draw_label("Trial 1", x=0.38, y=0.125, size=9) +
+  draw_image(triangle, scale=0.021, x=-0.155, y=-0.4045) +
+  draw_label("Trial 2", x=0.38, y=0.0955, size=9)
+  
+
+ggsave2("FigureOutput/Fig1.pdf", width=9.7, height=6.45, units="in", device=cairo_pdf)
+```
+
+
+# Importing modelled parameter estimates from Mathematica
+```{r}
+model_delta_a <- read.csv("DataInput/ModelOutput_delta_a.csv") %>% 
+  pivot_longer(cols=c(X0:X2), names_to = "timesEC50", values_to = "delta") %>% 
+  rename("combo"=Combo)
+model_delta_a$timesEC50 <- gsub("X", "", model_delta_a$timesEC50)
+
+a_values <- model_delta_a %>% 
+  select(combo, a) %>% 
+  distinct() 
+
+
+
+EC50s <-read.csv("DataInput/ModelOutput_EC50s.csv") 
+avg_EC50s <- EC50s %>% 
+  group_by(metal) %>% 
+  summarise(avg_EC50=mean(EC50),
+            se_EC50=std.error(EC50))
+conc_times_avgEC50 <- avg_EC50s %>% 
+  mutate(EC50_0 = avg_EC50*0,
+         EC50_0.2 = avg_EC50*0.2,
+         EC50_0.4 = avg_EC50*0.4,
+         EC50_0.6 = avg_EC50*0.6,
+         EC50_0.8 = avg_EC50*0.8,
+         EC50_1.0 = avg_EC50*1,
+         EC50_1.2 = avg_EC50*1.2,
+         EC50_1.4 = avg_EC50*1.4,
+         EC50_1.6 = avg_EC50*1.6,
+         EC50_1.8 = avg_EC50*1.8,
+         EC50_2 = avg_EC50*2) %>% 
+  select(!c(se_EC50, EC50_0)) %>% 
+  pivot_longer(cols=c(EC50_0.2:EC50_2), names_to = "times_EC50", values_to = "conc")
+conc_times_avgEC50$times_EC50 <- gsub("EC50_","",conc_times_avgEC50$times_EC50)
+```
+###normality of a
+```{r}
+#all deltas calculated from each conc
+hist(a_values$a, breaks=10,
+     main=NULL, xlab="\u03b1")
+qqnorm(a_values$a, pch = 1, frame = FALSE,
+       main=NULL)
+qqline(a_values$a, col = "steelblue", lwd = 2)
+
+shapiro.test(a_values$a)
+```
+# Figure 3
+##fig3A - strength of interactions by metal
+###setting up data
+```{r}
+syn_ant_forward <- a_values %>% 
+  mutate(metal = str_extract(combo, "^.{2}"),
+         other_metal = str_extract(combo, ".{2}$"))
+syn_ant_reverse <- a_values %>% 
+  mutate(metal = str_extract(combo, ".{2}$"),
+         other_metal = str_extract(combo, "^.{2}"))
+syn_ant <- rbind(syn_ant_forward, syn_ant_reverse) %>% 
+  rename(a_value = "a")
+
+avg_syn_ant <- syn_ant %>%
+  group_by(metal) %>% 
+  summarize(avg_a = mean(a_value),
+            se_a = std.error(a_value))
+
+syn_ant$metal <- factor(levels = c("Mn", "Cu", "Ni", "Zn", "Cd", "Co"), syn_ant$metal)
+
+syn_ant_dashed_lines <- syn_ant %>% 
+  filter(metal=="Cd" & (other_metal=="Co" | other_metal=="Zn") |
+           metal=="Co" & (other_metal=="Cd" | other_metal=="Zn") |
+           metal=="Cu" & (other_metal=="Cd" | other_metal=="Co" | other_metal=="Zn") |
+           metal=="Mn" & (other_metal=="Cd" | other_metal=="Co" | other_metal=="Zn") |
+           metal=="Ni" & (other_metal=="Cd" | other_metal=="Co" | other_metal=="Zn") |
+           metal=="Zn" & (other_metal=="Cd" | other_metal=="Co")) %>% 
+  group_by(metal) %>% 
+  summarise(avg_a = mean(a_value))
+```
+###graphing data
+```{r}
+fig3A <- syn_ant %>% 
+  ggplot(aes(x=metal, y=a_value)) +
+  geom_hline(yintercept = 0, color="grey80") +
+  geom_vline(xintercept = 1.5) +
+  geom_vline(xintercept = 2.5) +
+  geom_vline(xintercept = 3.5) +
+  geom_vline(xintercept = 4.5) +
+  geom_vline(xintercept = 5.5) +
+  geom_point(data=syn_ant, aes(x=metal, y=a_value, fill=combo, shape=other_metal, color=combo), size=6, stroke=2.5, position=position_dodge(width=0.7)) +
+  geom_text(aes(label=other_metal, group=combo), position = position_dodge(0.7), size=3) +
+  geom_point(data=avg_syn_ant, aes(x=metal, y=avg_a), size=5, shape=21, fill="white", color="black") +
+  geom_segment(data=syn_ant_dashed_lines, aes(x=as.numeric(metal)-0.5, xend=as.numeric(metal)+0.5, y=avg_a, yend=avg_a), color="black", linetype = "dashed", linewidth=0.75) +
+  scale_shape_manual(limits=c("Mn", "Cu", "Ni", "Zn", "Cd", "Co"), values = c(24, 25, 23, 22, 8, 21)) + 
+  ylim(-3.3,3.3) +
+  labs(x="Metal", y="a", color="Metal\ncombination", shape="\nOther metal") +
+  scale_fill_manual(limits = c("CuMn", "MnZn", "MnNi", "CoMn", "CdMn", "CdNi", "NiZn", "CoNi", "CdZn", "CoZn", "CdCo", "CuNi", "CdCu", "CuZn", "CoCu"),
+                     values = c("#55D0E6", "#D37AFF", "#FEB380", "#8A58D5", "#FE878B",   "#BB9B56","#FFC60C", "#2BA735", "#D48D8B", "#7282FF", "#9D8F8B",  "#CBDF1C", "#90B927",  "#3C99DB", "#3DC19D")) +
+  scale_color_manual(limits = c("CuMn", "MnZn", "MnNi", "CoMn", "CdMn", "CdNi", "NiZn", "CoNi", "CdZn", "CoZn", "CdCo", "CuNi", "CdCu", "CuZn", "CoCu"),
+                     values = c("#55D0E6", "#D37AFF", "#FEB380", "#8A58D5", "#FE878B",   "#BB9B56","#FFC60C", "#2BA735", "#D48D8B", "#7282FF", "#9D8F8B",  "#CBDF1C", "#90B927",  "#3C99DB", "#3DC19D")) +
+  guides(fill="none", 
+         color = guide_legend(override.aes = list(size=3), order=1),
+         shape = guide_legend(order=2, override.aes = list(size=4, fill="black", stroke=1.5))) +
+  theme_bw(base_size=14) +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size=16, face="bold.italic", family="serif"),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size=14, face="bold", color="black"),
+        legend.box = "vertical",
+        legend.spacing = unit(-0.2,"cm"),
+        legend.text = element_text(size=9),
+        legend.title=element_text(size=10),
+        legend.key.size = unit(0.57,"cm"))
+```
+##Fig3_cowplot
+```{r}
+ggdraw() +
+  draw_grob(rectGrob(gp=gpar(col="white", fill="white"))) +
+  draw_plot(fig3A, width=0.87, height=1, x=0.13, y=0) +
+  draw_grob(segmentsGrob(x0=0.07,y0=0.47,x1=0.07,y1=0.28, arrow=arrow(angle=20, length=unit(0.02, "npc"), ends="last", type="closed"), gp=gpar(fill="black",lwd=1.8))) +
+  draw_grob(segmentsGrob(x0=0.07,y0=0.58,x1=0.07,y1=0.77, arrow=arrow(angle=20, length=unit(0.02, "npc"), ends="last", type="closed"), gp=gpar(fill="black",lwd=1.8))) +
+  draw_label("Antagonistic \ntoxicity", x=0.07, y=0.825, size=12)+
+  draw_label("Concentration \naddition", x=0.07, y=0.525, size=12)+
+  draw_label("Synergistic \ntoxicity", x=0.07, y=0.225, size=12)
+ggsave2("FigureOutput/Fig3.pdf", width=8,height=6,units="in")
+```
+# Figure 4 
+##fig4A - avg obs d vs. a
+```{r}
+delta_a <- deltas_avg %>% 
+  left_join(a_values, join_by(combo)) %>% 
+  rename(a_value="a")
+  
+
+linear_mod <- lm(avg_delta ~ a_value, data=delta_a)
+summary(linear_mod)
+
+poly_model <- lm(avg_delta ~ poly(a_value, 2, raw=TRUE), data = delta_a)
+summary(poly_model)
+f <- function(x) (0.717 - (0.13878 * x) - (0.03644*x^2))
+
+AIC(linear_mod)
+AIC(poly_model)
+BIC(linear_mod)
+BIC(poly_model)
+
+fig4A <- delta_a %>% 
+  ggplot(aes(x=a_value, y=avg_delta)) +
+  geom_hline(yintercept = 0, alpha=0.2) +
+  geom_vline(xintercept = 0, alpha=0.2) +
+  geom_smooth(method="lm", colour="black", se=F, size=0.7) +
+  stat_function(fun=f, colour="blue", size=1) +
+  geom_errorbar(aes(ymin=avg_delta-se_delta, ymax=avg_delta+se_delta), width=0.2) +
+  geom_point(aes(color=combo), size=3) +
+  labs(y="Observed \u03b4", x="a") +
+  scale_color_manual(limits = c("CdCo", "CdZn", "CdMn", "MnNi", "CdNi", "CuNi", "CdCu", "CoNi", "CoCu", "CuMn", "CuZn", "CoZn", "CoMn", "MnZn", "NiZn"),
+                     values = c("#9D8F8B", "#D48D8B", "#FE878B", "#FEB380", "#FFC60C", "#CBDF1C", "#90B927", "#2BA735", "#3DC19D", "#55D0E6", "#3C99DB", "#7282FF", "#8A58D5", "#D37AFF", "#BB9B56")) +
+  scale_x_continuous(breaks=seq(-2, 3, 1)) +
+  scale_y_continuous(breaks=seq(-0.5, 1, 0.5)) +
+  theme_bw() +
+  theme(
+    aspect.ratio = 1,
+    axis.title.y=element_text(face="bold"),
+    axis.title.x=element_text(face="bold.italic", family="serif", size=15),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  )
+
+# Adding another version with the legend so I can extract it later for the cowplot
+fig4_legend <- delta_a %>% 
+  ggplot(aes(x=a_value, y=avg_delta)) +
+  geom_hline(yintercept = 0, alpha=0.2) +
+  geom_vline(xintercept = 0, alpha=0.2) +
+  geom_smooth(method="lm", colour="black", se=F, linewidth=0.7) +
+  stat_function(fun=f, colour="blue", size=1) +
+  geom_errorbar(aes(ymin=avg_delta-se_delta, ymax=avg_delta+se_delta), width=0.2) +
+  geom_point(aes(color=combo), size=3) +
+  labs(y="Observed \u03b4", x="a") +
+  scale_color_manual(limits = c("CdCo", "CdZn", "CdMn", "MnNi", "CdNi", "CuNi", "CdCu", "CoNi", "CoCu", "CuMn", "CuZn", "CoZn", "CoMn", "MnZn", "NiZn"),
+                     values = c("#9D8F8B", "#D48D8B", "#FE878B", "#FEB380", "#FFC60C", "#CBDF1C", "#90B927", "#2BA735", "#3DC19D", "#55D0E6", "#3C99DB", "#7282FF", "#8A58D5", "#D37AFF", "#BB9B56")) +
+  scale_x_continuous(breaks=seq(-2, 3, 1)) +
+  scale_y_continuous(breaks=seq(-0.5, 1, 0.5)) +
+  theme_bw() +
+  theme(
+    aspect.ratio = 1,
+    #axis.title.y=element_text(face="bold"),
+    axis.title.x=element_text(face="bold.italic", family="serif", size=15),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    legend.position = "right"
+  )
+```
+
+##fig4B - observed delta vs. modelled delta
+```{r}
+# these dstars are inferred using concentrations from each concentration level in the assay
+dstar_conclevel <- read.csv("DataInput/dstar_predictions_conclevel.csv") %>%
+  select(metal, conc, trial, obs_delta, exp_delta) %>% 
+  group_by(metal, conc) %>% 
+  summarise(obs_delta=mean(obs_delta),
+            exp_delta=mean(exp_delta))
+
+dstar_avg <- dstar_conclevel %>% 
+  filter(conc!=5) %>% 
+  group_by(metal) %>% 
+  summarise(avg_obs_d = mean(obs_delta),
+            se_obs_d = std.error(obs_delta),
+            avg_exp_d = mean(exp_delta),
+            se_exp_d = std.error(exp_delta))
+
+#averaged across conc level 1-4
+fig4B <- dstar_avg %>% 
+  ggplot(aes(x=avg_exp_d, y=avg_obs_d)) +
+  geom_hline(yintercept = 0, alpha=0.2) +
+  geom_vline(xintercept = 0, alpha=0.2) +
+  geom_abline(slope=1, linetype=3) +
+  #geom_smooth(method="lm", colour="black", se=F, size=0.7) +
+  geom_abline(slope=0.89621, intercept=-0.00352) +
+  geom_errorbar(aes(ymin=avg_obs_d-se_obs_d, ymax=avg_obs_d+se_obs_d), width=0.05) +
+  geom_errorbar(aes(xmin=avg_exp_d-se_exp_d, xmax=avg_exp_d+se_exp_d), width=0.05) +
+  geom_point(aes(color=metal), size=3) +
+  labs(y="Observed \u03b4", x="Inferred \u03b4*", color="Metal combo") +
+  scale_color_manual(limits = c("CdCo", "CdZn", "CdMn", "MnNi", "CdNi", "CuNi", "CdCu", "CoNi", "CoCu", "CuMn", "CuZn", "CoZn", "CoMn", "MnZn", "NiZn"),
+                     values = c("#9D8F8B", "#D48D8B", "#FE878B", "#FEB380", "#FFC60C", "#CBDF1C", "#90B927", "#2BA735", "#3DC19D", "#55D0E6", "#3C99DB", "#7282FF", "#8A58D5", "#D37AFF", "#BB9B56")) +
+  scale_x_continuous(limits = c(-0.35,1.07), expand = c(0, 0), breaks = (c(0, 0.5, 1))) + 
+  scale_y_continuous(limits = c(-0.35,1.07), expand = c(0, 0), breaks = (c(0, 0.5, 1))) +
+  theme_bw() +
+  theme(
+    aspect.ratio = 1,
+    axis.title=element_text(face="bold"),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    legend.position = "none")
+
+#DEMING REGRESSIONS
+(sd(dstar_avg$avg_obs_d)^2)/(sd(dstar_avg$avg_exp_d)^2) #calculating error ratio
+dem_reg(x="avg_exp_d", y="avg_obs_d", data=dstar_avg, error.ratio = 1.25)
+```
+##fig4C - inferred delta* over theoretical stressor gradient
+```{r}
+fig4C <- model_delta_a %>% 
+  group_by(combo) %>% 
+  ggplot(aes(x=as.numeric(timesEC50), y=delta, color=combo)) +
+  geom_hline(yintercept = 0, alpha=0.75) +
+  geom_vline(xintercept = 0, alpha=0.75) +
+  geom_line(aes(color=combo), size=1) +
+  labs(x="[metal]/EC50", y="Inferred \u03b4*", color="Metal\ncombo") +
+  scale_color_manual(limits = c("CdCo", "CdZn", "CdMn", "MnNi", "CdNi", "CuNi", "CdCu", "CoNi", "CoCu", "CuMn", "CuZn", "CoZn", "CoMn", "MnZn", "NiZn"),
+                     values = c("#9D8F8B", "#D48D8B", "#FE878B", "#FEB380", "#FFC60C", "#CBDF1C", "#90B927", "#2BA735", "#3DC19D", "#55D0E6", "#3C99DB", "#7282FF", "#8A58D5", "#D37AFF", "#BB9B56")) +
+  theme_minimal() +
+  theme(
+    axis.title.y=element_text(face="bold"),
+    axis.title.x=element_text(face="bold"),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill="white", color=NA),
+    legend.position = "none"
+  ) 
+```
+
+##Fig4_cowplot
+```{r}
+legend_4 <- get_plot_component(fig4_legend, 'guide-box-right')
+fig4top <- plot_grid(fig4A, fig4B, nrow = 1, labels = "AUTO") 
+fig4bottom <- plot_grid(NULL,fig4C, NULL, nrow=1, labels = c(NULL, "C", NULL), rel_widths = c(0.2,1,0.2))
+fig4component <- plot_grid(fig4top,fig4bottom, ncol=1, rel_heights = c(1,0.9))
+plot_grid(fig4component, legend_4, nrow=1,rel_widths = c(1,0.1))
+
+
+ggsave2("FigureOutput/Fig4.pdf", width=7.5,height=5,units="in", device=cairo_pdf)
+```
+# Figure 5
+##loading prediction data and joining to observed interaction data
+```{r}
+predictions <- read.csv("DataInput/crosstol_predictions.csv") %>% 
+  select(combo, prop.syn, all_slope, ORP) %>% 
+  rename("ORP_diff" = ORP) %>% 
+  distinct()
+
+delta_a_predictions <- delta_a %>% left_join(predictions) %>% 
+  mutate(ORP_sim = 0-ORP_diff)
+```
+##fig5 components
+```{r}
+# a vs. prop.syn
+fig5A <- delta_a_predictions %>% 
+  ggplot(aes(x=prop.syn, y=a_value, color=combo)) +
+  geom_smooth(method="lm", color="black", fill="grey90") +
+  geom_point(size=3) +
+  scale_color_manual(values=combo_alphabet_palette) +
+  scale_y_continuous(limits=c(-3,3.5), breaks=c(-3, -2, -1, 0, 1, 2, 3)) +
+  theme_bw() +
+  theme(panel.grid=element_blank(),
+        legend.position = "none",
+        axis.title=element_blank(),
+        axis.text=element_blank())
+lm(a_value ~ prop.syn, data=delta_a_predictions) %>% summary()
+
+#a vs. allslope
+fig5B <- delta_a_predictions %>% 
+  ggplot(aes(x=all_slope, y=a_value, color=combo)) +
+  geom_smooth(method="lm", color="black", fill="grey90", linetype=2) +
+  geom_point(size=3) +
+  scale_color_manual(values=combo_alphabet_palette) +
+  scale_y_continuous(limits=c(-3,3.5), breaks=c(-3, -2, -1, 0, 1, 2, 3)) +
+  theme_bw() +
+  theme(panel.grid=element_blank(),
+        legend.position = "none",
+        axis.title=element_blank(),
+        axis.text=element_blank())
+lm(a_value ~ all_slope, data=delta_a_predictions) %>% summary()
+
+#a vs. ORP_sim
+fig5C <- delta_a_predictions %>% 
+  ggplot(aes(x=ORP_sim, y=a_value, color=combo)) +
+  geom_smooth(method="lm", color="black", fill="grey90") +
+  geom_point(size=3) +
+  scale_color_manual(values=combo_alphabet_palette) +
+  scale_y_continuous(limits=c(-3,3.5), breaks=c(-3, -2, -1, 0, 1, 2, 3)) +
+  labs(y="a") +
+  theme_bw() +
+  theme(panel.grid=element_blank(),
+        legend.position = "none",
+        axis.title.y=element_text(face="bold.italic", family="serif", size=15),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank())
+lm(a_value ~ ORP_sim, data=delta_a_predictions) %>% summary()
+
+#delta vs. prop.syn
+fig5D <- delta_a_predictions %>% 
+  ggplot(aes(x=prop.syn, y=avg_delta, color=combo)) +
+  geom_smooth(method="lm", color="black", fill="grey80", linetype=2) +
+  geom_point(size=3) +
+  scale_color_manual(values=combo_alphabet_palette) +
+  scale_y_continuous(limits=c(-0.21, 1.2)) +
+  labs(x="Proportion of resistance genes\nwith same effect") +
+  theme_bw() +
+  theme(panel.grid=element_blank(),
+        legend.position = "none",
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank())
+lm(avg_delta ~ prop.syn, data=delta_a_predictions) %>% summary()
+
+#delta vs. allslope
+fig5E <- delta_a_predictions %>% 
+  ggplot(aes(x=all_slope, y=avg_delta, color=combo)) +
+  geom_smooth(method="lm", color="black", fill="grey80", linetype=2) +
+  geom_point(size=3) +
+  scale_color_manual(values=combo_alphabet_palette) +
+  scale_y_continuous(limits=c(-0.21, 1.2)) +
+  labs(x="Correlation of concentration\nin soil/sediment samples") +
+  theme_bw() +
+  theme(panel.grid=element_blank(),
+        legend.position = "none",
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank())
+lm(a_value ~ all_slope, data=delta_a_predictions) %>% summary()
+
+#delta vs. ORP_sim
+fig5F <- delta_a_predictions %>% 
+  ggplot(aes(x=ORP_sim, y=avg_delta, color=combo)) +
+  geom_smooth(method="lm", color="black", fill="grey80", linetype=2) +
+  geom_point(size=3) +
+  scale_color_manual(values=combo_alphabet_palette) +
+  scale_y_continuous(limits=c(-0.21, 1.2)) +
+  labs(x="Oxidation-reduction potential\nsimilarity", y="Observed \u03b4") +
+  theme_bw() +
+  theme(panel.grid=element_blank(),
+        axis.title.y=element_text(face="bold"),
+        legend.position = "none")
+
+fig5_legend_component <- delta_a_predictions %>% 
+  ggplot(aes(x=prop.syn, y=a_value, color=combo)) +
+  geom_smooth(method="lm", color="black", fill="grey90") +
+  geom_point(size=3) +
+  scale_color_manual(values=combo_alphabet_palette) +
+  scale_y_continuous(limits=c(-3,3.5), breaks=c(-3, -2, -1, 0, 1, 2, 3)) +
+  labs(y="a", color="Metal \ncombination") +
+  theme_bw() +
+  theme(panel.grid=element_blank(),
+        axis.title.y=element_text(face="bold.italic", family="serif", size=15),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        legend.text = element_text(size=9),
+        legend.title = element_text(size=10),
+        legend.position = "right")
+```
+
+##Fig5_cowplot
+```{r}
+fig5_top <- plot_grid(fig5C, fig5A, fig5B, nrow = 1, rel_widths = c(1.15, 1, 1), labels = "AUTO", label_x = c(0.14,0.022,0.021), label_y = c(1.07,1.07,1.07))
+fig5_bottom <- plot_grid(fig5F, fig5D, fig5E, nrow = 1, rel_widths = c(1.15, 1, 1), labels = c("D","E","F"), label_x = c(0.135,0.024,0.023), label_y = c(1.065,1.065,1.065))
+fig5_plots<-plot_grid(NULL, fig5_top, NULL, fig5_bottom, ncol=1, rel_heights = c(0.05,1,0.05,1.17))
+
+legend_5 <- get_plot_component(fig5_legend_component, 'guide-box-right')
+
+fig5_legend <- plot_grid(NULL, legend_5, NULL, nrow = 3, rel_heights = c(1,1.5,1))
+
+plot_grid(fig5_plots, fig5_legend, nrow = 1, rel_widths = c(1,0.1))
+ggsave2("FigureOutput/Fig5.pdf", width = 9.6, height = 6.5, units = "in", dpi=700, device=cairo_pdf)
+```
+###Permutation test for a vs. prop.syn
+```{r}
+slopes_prop.syn <- data.frame(matrix(nrow = 1, ncol = 1)) %>% rename("slope"=matrix.nrow...1..ncol...1.)
+
+
+for (i in seq(1:10000)) {
+  delta_a_predictions$random_y <- sample(delta_a_predictions$a_value, replace=FALSE)
+  
+  my_lm <- lm(random_y ~ prop.syn, data=delta_a_predictions) 
+  
+  slopes_prop.syn[i,] <- summary(my_lm)$coefficients[2,1]
+  }
+
+
+slopes_prop.syn %>% filter(slope > 5.196) %>% nrow()
+```
+###Permutation test for a vs. ORP
+```{r}
+slopes_ORP <- data.frame(matrix(nrow = 1, ncol = 1)) %>% rename("slope"=matrix.nrow...1..ncol...1.)
+
+
+for (i in seq(1:10000)) {
+  delta_a_predictions$random_y <- sample(delta_a_predictions$a_value, replace=FALSE)
+  
+  my_lm <- lm(random_y ~ ORP_diff, data=delta_a_predictions) 
+  
+  slopes_ORP[i,] <- summary(my_lm)$coefficients[2,1]
+  }
+
+
+slopes_ORP %>% filter(slope < -78.8107) %>% nrow()
+```
+
+# Figure S2
+```{r}
+#example growth curves to demonstrate r
+growthrates_trial1 <- max_growth1_wells %>% 
+  mutate(trial="trial1")
+growthrates_trial2 <- max_growth2_wells %>% 
+  mutate(trial="trial2")
+growthrates_all <- rbind(growthrates_trial1, growthrates_trial2) %>% 
+  arrange(metal, maxSlope) 
+growthrates_all_join <- growthrates_all %>% 
+  select(trial, well, maxSlope)
+
+growthcurves_trial1 <- df3_1 %>% 
+  mutate(trial="trial1", .before = "t1")
+growthcurves_trial2 <- df3_2 %>% 
+  mutate(trial="trial2", .before = "t1")
+
+old_cols_1dig <- paste("t", 1:9, sep = "")
+new_cols_1dig <- paste("t", "00", 1:9, sep = "")
+old_cols_2dig <- paste("t", 10:99, sep = "")
+new_cols_2dig <- paste("t", "0", 10:99, sep = "")
+growthcurves_all <- rbind(growthcurves_trial1, growthcurves_trial2) %>% 
+  rename_with(~ new_cols_1dig[which(old_cols_1dig == .x)], .cols = old_cols_1dig) %>%
+  rename_with(~ new_cols_2dig[which(old_cols_2dig == .x)], .cols = old_cols_2dig) %>% 
+  left_join(growthrates_all_join, join_by(trial, well)) %>% 
+  relocate(maxSlope,.after=trial) %>% 
+  filter(metal=="YPAD" | metal=="Cd" | metal=="Co" | metal=="Cu" | metal=="Mn" | metal=="Ni" | metal=="Zn") %>% 
+  arrange(metal,maxSlope)
+```
+```{r}
+growthcurves_s3.2 <- growthcurves_all[c(160,161,162, 24,19,18,17,2, 56,52,51,47,42,35, 89,85,78,75,67, 117,115,112,108,101,96, 143,142,140,137,131,126, 200,193,190,186,178,174),] %>% 
+  pivot_longer(cols = t001:t192, names_to = "timepoint", values_to = "OD") 
+
+growthcurves_s3.2$metal <- factor(levels=c("YPAD","Cd","Co","Cu","Mn","Ni","Zn"), growthcurves_s3.2$metal)
+growthcurves_s3.2$OD <- as.numeric(growthcurves_s3.2$OD)
+
+growthcurves_s3.2 %>% 
+  ggplot(aes(x=timepoint, y=OD)) +
+  geom_smooth(aes(group=well, color=maxSlope), method="loess", span=0.1, se=F) + 
+  scale_x_discrete(breaks=c("t048","t096","t144","t192"),
+                   labels=c("12","24","36","48")) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5)) + 
+  scale_color_viridis(option="turbo", breaks=c(0.05, 0.1, 0.15, 0.2, 0.25, 0.3)) +
+  labs(color="r",x="Time (hr)") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = "top",
+        legend.text = element_text(angle=0,vjust=0.5),
+        legend.text.position = "top") +
+  facet_wrap(~metal,nrow=1) +
+  guides(color = guide_colorbar(barwidth = 15, barheight = 0.5))
+ggsave("FigureOutput/FigS2.pdf", width=8, height=4, units="in")
+
+#concentrations
+s3.2_conc <- growthcurves_s3.2 %>% 
+  select(-c(timepoint, OD)) %>% 
+  distinct() %>% 
+  arrange(metal, maxSlope) %>% 
+  left_join(vgraph_mM)
+```
+
+# Figure S3 
+##figS3A - all tolerance curves in one graph
+```{r}
+dose_response <- read.csv("DataInput/dose_response.csv")
+
+dose_response %>%
+  filter(conc!=0 & yeast!="BLANK" & media!="YPAD") %>% 
+  group_by(media) %>% 
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial))) +
+  geom_rect(aes(ymin=0.003, ymax=0.029, xmin=-0.3, xmax=13.2), color="transparent", fill="grey90", alpha=0.25) + # neg control bar
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=-0.3, xmax=13.2), color="transparent", fill="grey90", alpha=0.25) + # pos control bar
+  geom_hline(yintercept = 0.25, color="grey90", linetype=1) +
+  geom_hline(yintercept = 0.2, color="grey90", linetype=1) +
+  geom_hline(yintercept = 0.15, color="grey90", linetype=1) +
+  geom_hline(yintercept = 0.1, color="grey90", linetype=1) +
+  geom_hline(yintercept = 0.05, color="grey90", linetype=1) +
+  geom_path(size=1.5, aes(color=media)) +
+  geom_point(size=3, shape=23, aes(fill=media)) +
+  #geom_point(data=vgraph_Zn, aes(color=conc), size=5) +
+  labs(x="Metal concentration (mM)", y="r", color="Metal", fill="Metal") +
+  scale_color_manual(values=c("#FF9A17", "#3B83FF", "#3EFF38", "#FD73FF", "#FFD000",  "#A880FF")) +
+  scale_fill_manual(values=c("#FF9A17", "#3B83FF", "#3EFF38", "#FD73FF", "#FFD000",  "#A880FF")) +
+  scale_x_continuous(limits = c(-0.3,13.2), expand = c(0, 0)) + # width of graph on x scale, no margins
+  scale_y_continuous(limits = c(0,0.35), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35))) +#height of graph on y, no margins, set ticks
+  theme_bw(base_size = 13) +
+  theme(legend.position="none",
+        axis.title.y=element_text(face="italic"),
+        panel.grid = element_blank())
+ggsave("FigureOutput/FigS3/figS3A.jpg", width=11, height=3.7, units="in", dpi=700)
+```
+##fig3B-G - individual tolerance curves with fig1A growth rates overlaid
+###getting growth rates from fig1A for overlay onto tolerance curves
+```{r}
+#getting growth rates from fig1A for overlay onto tolerance curves
+vgraph_Cd <- combodata_avg %>% 
+  filter(metal=="Cd") %>% 
+  mutate(mM=case_when(trial=="two" & conc==1 ~ 0.005,
+                      trial=="two" & conc==2 ~ 0.010,
+                      trial=="two" & conc==3 ~ 0.016,
+                      trial=="two" & conc==4 ~ 0.022,
+                      trial=="two" & conc==5 ~ 0.027,
+                      trial=="one" & conc==1 ~ 0.008,
+                      trial=="one" & conc==2 ~ 0.011,
+                      trial=="one" & conc==3 ~ 0.017,
+                      trial=="one" & conc==4 ~ 0.026,
+                      trial=="one" & conc==5 ~ 0.038)) %>% 
+  rename(Mean="Mean_r")
+vgraph_Co <- combodata_avg %>% 
+  filter(metal=="Co") %>% 
+  mutate(mM=case_when(trial=="two" & conc==1 ~ 0.5,
+                      trial=="two" & conc==2 ~ 0.85,
+                      trial=="two" & conc==3 ~ 0.9,
+                      trial=="two" & conc==4 ~ 0.95,
+                      trial=="two" & conc==5 ~ 1.3,
+                      trial=="one" & conc==1 ~ 0.7,
+                      trial=="one" & conc==2 ~ 0.86,
+                      trial=="one" & conc==3 ~ 1,
+                      trial=="one" & conc==4 ~ 1.32,
+                      trial=="one" & conc==5 ~ 2.05)) %>% 
+  rename(Mean="Mean_r")
+vgraph_Cu <- combodata_avg %>% 
+  filter(metal=="Cu") %>% 
+  mutate(mM=case_when(trial=="two" & conc==1 ~ 4,
+                      trial=="two" & conc==2 ~ 8.83,
+                      trial=="two" & conc==3 ~ 10.17,
+                      trial=="two" & conc==4 ~ 10.85,
+                      trial=="two" & conc==5 ~ 12.9,
+                      trial=="one" & conc==1 ~ 8.83,
+                      trial=="one" & conc==2 ~ 10.17,
+                      trial=="one" & conc==3 ~ 10.83,
+                      trial=="one" & conc==4 ~ 12.00,
+                      trial=="one" & conc==5 ~ 13.5)) %>% 
+  rename(Mean="Mean_r")
+vgraph_Mn <- combodata_avg %>% 
+  filter(metal=="Mn") %>% 
+  mutate(mM=case_when(trial=="two" & conc==1 ~ 0.85,
+                      trial=="two" & conc==2 ~ 1,
+                      trial=="two" & conc==3 ~ 1.14,
+                      trial=="two" & conc==4 ~ 1.25,
+                      trial=="two" & conc==5 ~ 1.6,
+                      trial=="one" & conc==1 ~ 0.86,
+                      trial=="one" & conc==2 ~ 1.14,
+                      trial=="one" & conc==3 ~ 1.31,
+                      trial=="one" & conc==4 ~ 1.66,
+                      trial=="one" & conc==5 ~ 2.23,)) %>% 
+  rename(Mean="Mean_r")
+vgraph_Ni <- combodata_avg %>% 
+  filter(metal=="Ni") %>% 
+  mutate(mM=case_when(trial=="two" & conc==1 ~ 2.3,
+                      trial=="two" & conc==2 ~ 2.6,
+                      trial=="two" & conc==3 ~ 2.75,
+                      trial=="two" & conc==4 ~ 3,
+                      trial=="two" & conc==5 ~ 3.2,
+                      trial=="one" & conc==1 ~ 1.88,
+                      trial=="one" & conc==2 ~ 2.4,
+                      trial=="one" & conc==3 ~ 3,
+                      trial=="one" & conc==4 ~ 3.6,
+                      trial=="one" & conc==5 ~ 5.1)) %>% 
+  rename(Mean="Mean_r")
+vgraph_Zn <- combodata_avg %>% 
+  filter(metal=="Zn") %>% 
+  mutate(mM=case_when(trial=="two" & conc==1 ~ 3.33,
+                      trial=="two" & conc==2 ~ 4,
+                      trial=="two" & conc==3 ~ 4.8,
+                      trial=="two" & conc==4 ~ 5.4,
+                      trial=="two" & conc==5 ~ 6,
+                      trial=="one" & conc==1 ~ 4,
+                      trial=="one" & conc==2 ~ 4.74,
+                      trial=="one" & conc==3 ~ 5.4,
+                      trial=="one" & conc==4 ~ 6,
+                      trial=="one" & conc==5 ~ 6.6)) %>% 
+  rename(Mean="Mean_r")
+```
+###overlaying growth rates on tolerance curves
+```{r}
+dose_response %>%
+  filter(media=="Cd" & conc!=0 & yeast!="BLANK") %>% # Cadmium media with yeast
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial))) + # set axes and aesthetics
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=0.055), fill="grey90", alpha=0.25) + # neg control bar (Cd blanks)
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=0.055), fill="grey90", alpha=0.25) + # pos control bar
+  geom_hline(yintercept = 0.25, color="#AAAAAA", linetype=1) +
+  geom_hline(yintercept = 0.2, color="#888888", linetype=1) +
+  geom_hline(yintercept = 0.15, color="#666666", linetype=1) +
+  geom_hline(yintercept = 0.1, color="#434343", linetype=1) +
+  geom_hline(yintercept = 0.05, color="#212121", linetype=1) +
+  geom_path(color="#FF9A17", size=2.5, alpha=0.25) + # tolerance curve lines
+  geom_point(fill="#FF9A17", size=5, shape=23, alpha=0.25) + # tolerance curve points
+  geom_point(data=vgraph_Cd, aes(color=conc), size=6) + # vgraph points
+  scale_shape_manual(values = c(11, 9, 19,17)) + 
+  labs(x="Cadmium concentration (mM)", y="r") + # axis labels
+  scale_color_manual(values=bw_palette_5conc) + # vgraph point colors
+  scale_x_continuous(limits = c(0,0.055), expand = c(0, 0)) + # width of graph on x scale, no margins
+  scale_y_continuous(limits = c(0,0.35), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35))) +#height of graph on y, no margins, set ticks
+  theme_bw(base_size = 15) + 
+  theme(legend.position="none", # remove legend
+        axis.title.y=element_text(face="italic"), # italicize y axis title
+        panel.grid = element_blank()) # white panel background
+ggsave("FigureOutput/FigS3/figS3B.jpg", width=5, height=3.7, units="in", dpi=700)
+
+dose_response %>%
+  filter(media=="Co"& conc!=0 & yeast!="BLANK") %>% 
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial))) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=3.5), fill="grey90", alpha=0.25) + # neg control bar (Cd blanks)
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=3.5), fill="grey90", alpha=0.25) + # pos control bar
+  geom_hline(yintercept = 0.25, color="#AAAAAA", linetype=1) +
+  geom_hline(yintercept = 0.2, color="#888888", linetype=1) +
+  geom_hline(yintercept = 0.15, color="#666666", linetype=1) +
+  geom_hline(yintercept = 0.1, color="#434343", linetype=1) +
+  geom_hline(yintercept = 0.05, color="#212121", linetype=1) +
+  geom_path(color="#3B83FF", size=2.5, alpha=0.25) + 
+  geom_point(fill="#3B83FF", size=5, shape=23, alpha=0.25) + 
+  geom_point(data=vgraph_Co, aes(color=conc), size=6) +
+  scale_shape_manual(values = c(10, 11, 9, 19, 17)) + 
+  labs(x="Cobalt concentration (mM)", y="r") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0, 3.5), expand = c(0, 0)) + # width of graph on x scale, no margins
+  scale_y_continuous(limits = c(0, 0.35), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35))) +#height of graph on y, no margins, set ticks
+  theme_bw(base_size = 15) +
+  theme(legend.position="none",
+        axis.title.y=element_text(face="italic"),
+        panel.grid = element_blank())
+ggsave("FigureOutput/FigS3/figS3C.jpg", width=5, height=3.7, units="in", dpi=700)
+
+dose_response %>%
+  filter(media=="Cu"& conc!=0 & yeast!="BLANK") %>% 
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial))) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=15.5), fill="grey90", alpha=0.25) + # neg control bar (Cd blanks)
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=15.5), fill="grey90", alpha=0.25) + # pos control bar
+  geom_hline(yintercept = 0.25, color="#AAAAAA", linetype=1) +
+  geom_hline(yintercept = 0.2, color="#888888", linetype=1) +
+  geom_hline(yintercept = 0.15, color="#666666", linetype=1) +
+  geom_hline(yintercept = 0.1, color="#434343", linetype=1) +
+  geom_hline(yintercept = 0.05, color="#212121", linetype=1) +
+  geom_path(color="#3EFF38", size=2.5, alpha=0.25) + 
+  geom_point(fill="#3EFF38", size=5, shape=23, alpha=0.25) + 
+  geom_point(data=vgraph_Cu, aes(color=conc), size=6) +
+  scale_shape_manual(values = c(10, 11, 9, 19, 17)) + 
+  labs(x="Copper concentration (mM)", y="r") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,15.5), expand = c(0, 0), breaks = (c(0.0,2,4,6,8,10,12,14))) +
+  scale_y_continuous(limits = c(0,0.35), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35))) +
+  theme_bw(base_size = 15) +
+  theme(legend.position="none",
+        axis.title.y=element_text(face="italic"),
+        panel.grid = element_blank())
+ggsave("FigureOutput/FigS3/figS3D.jpg", width=5, height=3.7, units="in", dpi=700)
+
+dose_response %>%
+  filter(media=="Mn"& conc!=0 & yeast!="BLANK") %>% 
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial))) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=4.9), fill="grey90", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=4.9), fill="grey90", alpha=0.25) + 
+  geom_hline(yintercept = 0.25, color="#AAAAAA", linetype=1) +
+  geom_hline(yintercept = 0.2, color="#888888", linetype=1) +
+  geom_hline(yintercept = 0.15, color="#666666", linetype=1) +
+  geom_hline(yintercept = 0.1, color="#434343", linetype=1) +
+  geom_hline(yintercept = 0.05, color="#212121", linetype=1) +
+  geom_path(color="#FD73FF", size=2.5, alpha=0.25) + 
+  geom_point(fill="#FD73FF", size=5, shape=23, alpha=0.25) + 
+  geom_point(data=vgraph_Mn, aes(color=conc), size=6) +
+  scale_shape_manual(values = c(10, 11, 19, 17, 9)) + 
+  labs(x="Manganese concentration (mM)", y="r") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,4.9), expand = c(0, 0)) + 
+  scale_y_continuous(limits = c(0,0.35), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35))) +
+  theme_bw(base_size = 15) +
+  theme(legend.position="none",
+        axis.title.y=element_text(face="italic"),
+        panel.grid = element_blank())
+ggsave("FigureOutput/FigS3/figS3E.jpg", width=5, height=3.7, units="in", dpi=700)
+
+dose_response %>%
+  filter(media=="Ni"& conc!=0 & yeast!="BLANK") %>% 
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial))) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=4.5), fill="grey90", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=4.5), fill="grey90", alpha=0.25) + 
+  geom_hline(yintercept = 0.25, color="#AAAAAA", linetype=1) +
+  geom_hline(yintercept = 0.2, color="#888888", linetype=1) +
+  geom_hline(yintercept = 0.15, color="#666666", linetype=1) +
+  geom_hline(yintercept = 0.1, color="#434343", linetype=1) +
+  geom_hline(yintercept = 0.05, color="#212121", linetype=1) +
+  geom_path(color="#ffd000", size=2.5, alpha=0.25) + 
+  geom_point(fill="#ffd000", size=5, shape=23, alpha=0.25) + 
+  geom_point(data=vgraph_Ni, aes(color=conc), size=6) +
+  scale_shape_manual(values = c(10, 11, 9, 19, 17)) + 
+  labs(x="Nickel concentration (mM)", y="r") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,4.5), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0,0.35), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35))) +
+  theme_bw(base_size = 15) +
+  theme(legend.position="none",
+        axis.title.y=element_text(face="italic"),
+        panel.grid = element_blank())
+ggsave("FigureOutput/FigS3/figS3F.jpg", width=5, height=3.7, units="in", dpi=700)
+
+dose_response %>%
+  filter(media=="Zn"& conc!=0 & yeast!="BLANK") %>% 
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial))) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=8.7), fill="grey90", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=8.7), fill="grey90", alpha=0.25) + 
+  geom_hline(yintercept = 0.25, color="#AAAAAA", linetype=1) +
+  geom_hline(yintercept = 0.2, color="#888888", linetype=1) +
+  geom_hline(yintercept = 0.15, color="#666666", linetype=1) +
+  geom_hline(yintercept = 0.1, color="#434343", linetype=1) +
+  geom_hline(yintercept = 0.05, color="#212121", linetype=1) +
+  geom_path(color="#A880FF", size=2.5, alpha=0.25) + 
+  geom_point(fill="#A880FF", size=5, shape=23, alpha=0.25) + 
+  geom_point(data=vgraph_Zn, aes(color=conc), size=6) +
+  scale_shape_manual(values = c(10, 11, 9, 19, 17)) + 
+  labs(x="Zinc concentration (mM)", y="r") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,8.7), expand = c(0, 0)) + 
+  scale_y_continuous(limits = c(0,0.35), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35))) +
+  theme_bw(base_size = 15) +
+  theme(legend.position="none",
+        axis.title.y=element_text(face="italic"),
+        panel.grid = element_blank())
+ggsave("FigureOutput/FigS3/figS3G.jpg", width=5, height=3.7, units="in", dpi=700)
+```
+##figS3H - difference from target
+```{r}
+mydata <- rbind(vgraph_Cd, vgraph_Co, vgraph_Cu, vgraph_Mn, vgraph_Ni, vgraph_Zn) %>% 
+  mutate(yeast="OLY077")
+
+# Define target values
+targets <- c("1" = 0.25, "2" = 0.2, "3" = 0.15, "4" = 0.1, "5" = 0.05)
+
+# Add target values to the dataset
+mydata$target <- targets[as.character(mydata$conc)]
+mydata <- mydata %>% mutate(difference=Mean-target)
+great_diff <- mydata %>% filter(difference > 0.05) %>% arrange(metal, conc, trial)
+
+mydata %>% 
+  ggplot(aes(x=conc,y=difference, fill=metal, shape=as.character(trial))) +
+   annotate("rect", xmin=0.5, xmax=1.5, ymin=-0.15, ymax=0.2, alpha=0.25, fill="#AAAAAA") +
+  annotate("rect", xmin=1.5, xmax=2.5, ymin=-0.15, ymax=0.2, alpha=0.25, fill="#888888") +
+  annotate("rect", xmin=2.5, xmax=3.5, ymin=-0.15, ymax=0.2, alpha=0.25, fill="#666666") +
+  annotate("rect", xmin=3.5, xmax=4.5, ymin=-0.15, ymax=0.2, alpha=0.25, fill="#434343") +
+  annotate("rect", xmin=4.5, xmax=5.5, ymin=-0.15, ymax=0.2, alpha=0.25, fill="#212121") +
+  geom_hline(yintercept = 0) +
+  geom_point(position = position_dodge(width=0.7), size=5) +
+  labs(x="Concentration level (Target r)", y="Observed r - Target r") +
+  scale_fill_manual(values=c("#FF9A17", "#3B83FF", "#3EFF38", "#FD73FF", "#FFD000",  "#A880FF")) +
+  scale_shape_manual(values=c(21,24)) +
+  scale_y_continuous(limits = c(-0.15,0.2), expand = c(0, 0)) +
+  scale_x_discrete(labels=c("1" = "1 (0.25)", "2" = "2 (0.20)", "3" = "3 (0.15)", "4" = "4 (0.10)", "5" = "5 (0.05)")) +
+  theme_bw(base_size=14) +
+  theme(legend.position="none")
+```
+###confint stat for diff from target
+```{r}
+options(digits=3)
+combodata_unavg %>% arrange(metal, conc, trial, replicate) %>% View()
+
+#C1 target m: 0.25
+Cd_C1 <- combodata_unavg %>% filter(metal=="Cd" & conc==1)
+t.test(Cd_C1$maxSlope) # 0.255 0.294      outside target
+#C2 target m: 0.20
+Cd_C2 <- combodata_unavg %>% filter(metal=="Cd" & conc==2)
+t.test(Cd_C2$maxSlope) # 0.224 0.283      oustide target
+#C3 target m: 0.15
+Cd_C3 <- combodata_unavg %>% filter(metal=="Cd" & conc==3)
+t.test(Cd_C3$maxSlope) # 0.215 0.232      outside target
+#C4 target m: 0.10
+Cd_C4 <- combodata_unavg %>% filter(metal=="Cd" & conc==4)
+t.test(Cd_C4$maxSlope) # 0.0901 0.1057    
+#C5 target m: 0.05
+Cd_C5 <- combodata_unavg %>% filter(metal=="Cd" & conc==5)
+t.test(Cd_C5$maxSlope) # 0.00672 0.05547  
+
+
+#C1 target m: 0.25
+Co_C1 <- combodata_unavg %>% filter(metal=="Co" & conc==1)
+t.test(Co_C1$maxSlope) # 0.261 0.289      outside target
+#C2 target m: 0.20
+Co_C2 <- combodata_unavg %>% filter(metal=="Co" & conc==2)
+t.test(Co_C2$maxSlope) # 0.185 0.268      
+#C3 target m: 0.15
+Co_C3 <- combodata_unavg %>% filter(metal=="Co" & conc==3)
+t.test(Co_C3$maxSlope) # 0.104 0.146      outside target
+#C4 target m: 0.10
+Co_C4 <- combodata_unavg %>% filter(metal=="Co" & conc==4)
+t.test(Co_C4$maxSlope) # 0.0901 0.1057
+#C5 target m: 0.05
+Co_C5 <- combodata_unavg %>% filter(metal=="Co" & conc==5)
+t.test(Co_C5$maxSlope) # 0.00672 0.05547
+
+
+#C1 target m: 0.25
+Cu_C1 <- combodata_unavg %>% filter(metal=="Cu" & conc==1)
+t.test(Cu_C1$maxSlope) # 0.184 0.285     
+#C2 target m: 0.20
+Cu_C2 <- combodata_unavg %>% filter(metal=="Cu" & conc==2)
+t.test(Cu_C2$maxSlope) # 0.169 0.224      
+#C3 target m: 0.15
+Cu_C3 <- combodata_unavg %>% filter(metal=="Cu" & conc==3)
+t.test(Cu_C3$maxSlope) # 0.0935 0.1878    
+#C4 target m: 0.10
+Cu_C4 <- combodata_unavg %>% filter(metal=="Cu" & conc==4)
+t.test(Cu_C4$maxSlope) # 0.122 0.213      outside target
+#C5 target m: 0.05
+Cu_C5 <- combodata_unavg %>% filter(metal=="Cu" & conc==5)
+t.test(Cu_C5$maxSlope) # -0.0107  0.0441  outside target
+
+
+#C1 target m: 0.25
+Mn_C1 <- combodata_unavg %>% filter(metal=="Mn" & conc==1)
+t.test(Mn_C1$maxSlope) # 0.246 0.319     
+#C2 target m: 0.20
+Mn_C2 <- combodata_unavg %>% filter(metal=="Mn" & conc==2)
+t.test(Mn_C2$maxSlope) # 0.182 0.207     
+#C3 target m: 0.15
+Mn_C3 <- combodata_unavg %>% filter(metal=="Mn" & conc==3)
+t.test(Mn_C3$maxSlope) # 0.103 0.159    
+#C4 target m: 0.10
+Mn_C4 <- combodata_unavg %>% filter(metal=="Mn" & conc==4)
+t.test(Mn_C4$maxSlope) # 0.0649 0.1103     
+#C5 target m: 0.05
+Mn_C5 <- combodata_unavg %>% filter(metal=="Mn" & conc==5)
+t.test(Mn_C5$maxSlope) # 0.0404 0.0646 
+
+
+#C1 target m: 0.25
+Ni_C1 <- combodata_unavg %>% filter(metal=="Ni" & conc==1)
+t.test(Ni_C1$maxSlope) # 0.318 0.347      outside target    
+#C2 target m: 0.20
+Ni_C2 <- combodata_unavg %>% filter(metal=="Ni" & conc==2)
+t.test(Ni_C2$maxSlope) # 0.275 0.311      outside target
+#C3 target m: 0.15
+Ni_C3 <- combodata_unavg %>% filter(metal=="Ni" & conc==3)
+t.test(Ni_C3$maxSlope) # 0.0916 0.1941   
+#C4 target m: 0.10
+Ni_C4 <- combodata_unavg %>% filter(metal=="Ni" & conc==4)
+t.test(Ni_C4$maxSlope) # 0.0654 0.1028    
+#C5 target m: 0.05
+Ni_C5 <- combodata_unavg %>% filter(metal=="Ni" & conc==5)
+t.test(Ni_C5$maxSlope) # 0.0319 0.0549
+
+
+#C1 target m: 0.25
+Zn_C1 <- combodata_unavg %>% filter(metal=="Zn" & conc==1)
+t.test(Zn_C1$maxSlope) # 0.232 0.254      
+#C2 target m: 0.20
+Zn_C2 <- combodata_unavg %>% filter(metal=="Zn" & conc==2)
+t.test(Zn_C2$maxSlope) # 0.201 0.225      
+#C3 target m: 0.15
+Zn_C3 <- combodata_unavg %>% filter(metal=="Zn" & conc==3)
+t.test(Zn_C3$maxSlope) # 0.142 0.181   
+#C4 target m: 0.10
+Zn_C4 <- combodata_unavg %>% filter(metal=="Zn" & conc==4)
+t.test(Zn_C4$maxSlope) # 0.095 0.109    
+#C5 target m: 0.05
+Zn_C5 <- combodata_unavg %>% filter(metal=="Zn" & conc==5)
+t.test(Zn_C5$maxSlope) # 0.0324 0.0616
+```
+#Figure S4
+## figS4A - EC50 numline
+```{r}
+#Values here are from Mathematica estimates of EC50 from single metal dose response curves
+single_EC50s <- data.frame(
+  metal=c("Cd","Co","Cu","Mn","Ni","Zn"),
+  EC50=c(0.01927709305337785,0.9193242167751756,10.547323688456077,1.141893553606749,2.8313242497197466,4.866965299472917)) %>% 
+  mutate(numline="yes")
+single_EC50s %>%  
+  ggplot(aes(x=numline,y=EC50, color=metal)) +
+  geom_point(size=6) +
+  scale_color_manual(values=single_palette) +
+  #scale_x_discrete(expand = c(0,0)) +
+  labs(x="Metal", y="EC50 (mM)", color="Metal") +
+  theme_bw(base_size=12) +
+  theme(panel.grid = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "top") +
+  coord_flip() +
+  guides(colour = guide_legend(nrow = 1))
+```
+##figS4B - EC50 and SI overlaid on dose-response curve
+```{r}
+my_fn <- function(max,c,EC50,beta) {
+  max / (1 + (c / EC50)^beta)
+}
+
+functions <- data.frame(metal = c("Cd", "Co", "Cu", "Mn" ,"Ni", "Zn"),
+                        max = c(0.320975,0.324288,0.308914,0.33055,0.3332,0.323794),
+                        EC50 = c(0.019277,0.919324,10.54732,1.14189,2.831324,4.866965),
+                        beta = c(2.372425,4.681064,5.846534,4.37898,11.62968,4.579189),
+                        r = c(0.25, 0))
+
+r_values <- c(0.25, 0.2, 0.15, 0.1, 0.05)
+conc_level_values <- c(1,2,3,4,5)
+
+functions_expanded <- functions %>%
+  slice(rep(1:n(), each = length(r_values))) %>%
+  mutate(r = rep(r_values, times = nrow(functions)),
+         conc_level= rep(conc_level_values, times = nrow(functions))) %>%
+  mutate(mM=(-EC50^beta + (EC50^beta*max)/r)^(1/beta))
+
+#functions_expanded %>% write.csv("modelled_conclevel_mM_eq2.csv")
+
+Cd_labels <- data.frame(
+  x = c(0,0.00378,0.00755,0.01133,0.01511,0.01889,0.02266,0.02644,0.03022,0.03400,0.00378,0.00755,0.01133,0.01511,0.01889,0.02266,0.02644,0.03022,0.03400),
+  label = c("0","0.004","0.008","0.011","0.015","0.019","0.023","0.026","0.030","0.034","\n0.2","\n0.4","\n0.6","\n0.8","\n1.0","\n1.2","\n1.4","\n1.6","\n1.8"))
+S4B1 <- vgraph_Cd %>%
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial), color=conc)) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=0.038), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=0.038), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_vline(xintercept = 0.00378, linetype=3) + #mM of EC50 times 0.2
+  geom_vline(xintercept = 0.00755, linetype=3) + #mM of EC50 times 0.4
+  geom_vline(xintercept = 0.01133, linetype=3) + #mM of EC50 times 0.6
+  geom_vline(xintercept = 0.01511, linetype=3) + #mM of EC50 times 0.8
+  geom_vline(xintercept = 0.01889, size=2, color="#FF9A17") + #mM of EC50 times 1
+  geom_vline(xintercept = 0.02266, linetype=3) + #mM of EC50 times 1.2
+  geom_vline(xintercept = 0.02644, linetype=3) + #mM of EC50 times 1.4
+  geom_vline(xintercept = 0.03022, linetype=3) + #mM of EC50 times 1.6
+  geom_vline(xintercept = 0.03400, linetype=3) + #mM of EC50 times 1.8
+  geom_function(fun = ~ my_fn(max=0.320975, c=.x, EC50=0.019277, beta=2.372425)) +
+  geom_point(size=4.5) +
+  labs(x="Metal Concentration (mM)\nStressor Instensity (x*EC50)", y="m") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,0.038), 
+                     expand = c(0, 0),
+                     breaks = Cd_labels$x,
+                     labels = Cd_labels$label,
+                     minor_breaks = NULL) + 
+  scale_y_continuous(limits = c(0,0.34), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3))) +
+  theme_bw(base_size = 13) + 
+  theme(legend.position="none", # remove legend
+        axis.title = element_blank(),
+        panel.grid = element_blank()) # white panel background
+
+Co_labels <- data.frame(
+  x = c(0,0.18280,0.36559,0.54839,0.73119,0.91398,1.09678,1.27958,1.46237,1.64517,0.18280,0.36559,0.54839,0.73119,0.91398,1.09678,1.27958,1.46237,1.64517),
+  label = c("0","0.18","0.37","0.55","0.73","0.91","1.10","1.28","1.46","1.65","\n0.2","\n0.4","\n0.6","\n0.8","\n1.0","\n1.2","\n1.4","\n1.6","\n1.8"))
+S4B2 <- vgraph_Co %>%
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial), color=conc)) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=1.83), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=1.83), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_vline(xintercept = 0.18280, linetype=3) + #mM of EC50 times 0.2
+  geom_vline(xintercept = 0.36559, linetype=3) + #mM of EC50 times 0.4
+  geom_vline(xintercept = 0.54839, linetype=3) + #mM of EC50 times 0.6
+  geom_vline(xintercept = 0.73119, linetype=3) + #mM of EC50 times 0.8
+  geom_vline(xintercept = 0.91398, size=2, color="#3B83FF") + #mM of EC50 times 1
+  geom_vline(xintercept = 1.09678, linetype=3) + #mM of EC50 times 1.2
+  geom_vline(xintercept = 1.27958, linetype=3) + #mM of EC50 times 1.4
+  geom_vline(xintercept = 1.46237, linetype=3) + #mM of EC50 times 1.6
+  geom_vline(xintercept = 1.64517, linetype=3) + #mM of EC50 times 1.8
+  geom_function(fun = ~ my_fn(max=0.324288, c=.x, EC50=0.919324, beta=4.681064)) +
+  geom_point(size=4.5) +
+  labs(x="Metal Concentration (mM)\nStressor Instensity (x*EC50)", y="m") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,1.83), 
+                     expand = c(0, 0),
+                     breaks = Co_labels$x,
+                     labels = Co_labels$label,
+                     minor_breaks = NULL) + 
+  scale_y_continuous(limits = c(0, 0.34), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3))) +#height of graph on y, no margins, set ticks
+  theme_bw(base_size = 13) +
+  theme(legend.position="none",
+        axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        panel.grid = element_blank())
+
+Cu_labels <- data.frame(
+  x = c(0,2.04472,4.08944,6.13416,8.17887,10.22359,12.26831,14.31303,16.35775,18.40247,2.04472,4.08944,6.13416,8.17887,10.22359,12.26831,14.31303,16.35775,18.40247),
+  label = c("0","2.04","4.09","6.13","8.18","10.22","12.27","14.31","16.36","18.40","\n0.2","\n0.4","\n0.6","\n0.8","\n1.0","\n1.2","\n1.4","\n1.6","\n1.8"))
+S4B3 <- vgraph_Cu %>%
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial), color=conc)) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=20.45), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=20.45), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_vline(xintercept = 2.04472, linetype=3) + #mM of EC50 times 0.2
+  geom_vline(xintercept = 4.08944, linetype=3) + #mM of EC50 times 0.4
+  geom_vline(xintercept = 6.13416, linetype=3) + #mM of EC50 times 0.6
+  geom_vline(xintercept = 8.17887, linetype=3) + #mM of EC50 times 0.8
+  geom_vline(xintercept = 10.22359, size=2, color="#3EFF38") + #mM of EC50 times 1
+  geom_vline(xintercept = 12.26831, linetype=3) + #mM of EC50 times 1.2
+  geom_vline(xintercept = 14.31303, linetype=3) + #mM of EC50 times 1.4
+  geom_vline(xintercept = 16.35775, linetype=3) + #mM of EC50 times 1.6
+  geom_vline(xintercept = 18.40247, linetype=3) + #mM of EC50 times 1.8
+  geom_function(fun = ~ my_fn(max=0.308914, c=.x, EC50=10.54732, beta=5.846534)) +
+  geom_point(size=4.5) +
+  labs(x="Metal Concentration (mM)\nStressor Instensity (x*EC50)", y="m") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,20.45), 
+                     expand = c(0, 0),
+                     breaks = Cu_labels$x,
+                     labels = Cu_labels$label,
+                     minor_breaks = NULL) + 
+  scale_y_continuous(limits = c(0,0.34), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3))) +
+  theme_bw(base_size = 13) +
+  theme(legend.position="none",
+        axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        panel.grid = element_blank())
+
+Mn_labels <- data.frame(
+  x = c(0,0.23099,0.46199,0.69298,0.92397,1.15497,1.38596,1.61696,1.84795,2.07894,0.23099,0.46199,0.69298,0.92397,1.15497,1.38596,1.61696,1.84795,2.07894),
+  label = c("0","0.23","0.46","0.69","0.92","1.15","1.39","1.62","1.85","2.08","\n0.2","\n0.4","\n0.6","\n0.8","\n1.0","\n1.2","\n1.4","\n1.6","\n1.8"))
+S4B4 <- vgraph_Mn %>%
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial), color=conc)) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=2.31), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=2.31), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_vline(xintercept = 0.23099, linetype=3) + #mM of EC50 times 0.2
+  geom_vline(xintercept = 0.46199, linetype=3) + #mM of EC50 times 0.4
+  geom_vline(xintercept = 0.69298, linetype=3) + #mM of EC50 times 0.6
+  geom_vline(xintercept = 0.92397, linetype=3) + #mM of EC50 times 0.8
+  geom_vline(xintercept = 1.15497, size=2, color="#FD73FF") + #mM of EC50 times 1
+  geom_vline(xintercept = 1.38596, linetype=3) + #mM of EC50 times 1.2
+  geom_vline(xintercept = 1.61696, linetype=3) + #mM of EC50 times 1.4
+  geom_vline(xintercept = 1.84795, linetype=3) + #mM of EC50 times 1.6
+  geom_vline(xintercept = 2.07894, linetype=3) + #mM of EC50 times 1.8
+  geom_function(fun = ~ my_fn(max=0.33055, c=.x, EC50=1.14189, beta=4.37898)) +
+  geom_point(size=4.5) +
+  labs(x="Metal Concentration (mM)\nStressor Instensity (x*EC50)", y="m") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,2.31), 
+                     expand = c(0, 0),
+                     breaks = Mn_labels$x,
+                     labels = Mn_labels$label,
+                     minor_breaks = NULL) + 
+  scale_y_continuous(limits = c(0,0.34), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3))) +
+  theme_bw(base_size = 13) +
+  theme(legend.position="none",
+        axis.title = element_blank(),
+        panel.grid = element_blank())
+
+Ni_labels <- data.frame(
+  x = c(0,0.56726,1.13451,1.70177,2.26903,2.83628,3.40354,3.97080,4.53805,5.10531,0.56726,1.13451,1.70177,2.26903,2.83628,3.40354,3.97080,4.53805,5.10531),
+  label = c("0","0.57","1.13","1.70","2.27","2.84","3.40","3.97","4.54","5.11","\n0.2","\n0.4","\n0.6","\n0.8","\n1.0","\n1.2","\n1.4","\n1.6","\n1.8"))
+S4B5 <- vgraph_Ni %>%
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial), color=conc)) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=5.67), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=5.67), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_vline(xintercept = 0.56726, linetype=3) + #mM of EC50 times 0.2
+  geom_vline(xintercept = 1.13451, linetype=3) + #mM of EC50 times 0.4
+  geom_vline(xintercept = 1.70177, linetype=3) + #mM of EC50 times 0.6
+  geom_vline(xintercept = 2.26903, linetype=3) + #mM of EC50 times 0.8
+  geom_vline(xintercept = 2.83628, size=2, color="#ffd000") + #mM of EC50 times 1
+  geom_vline(xintercept = 3.40354, linetype=3) + #mM of EC50 times 1.2
+  geom_vline(xintercept = 3.97080, linetype=3) + #mM of EC50 times 1.4
+  geom_vline(xintercept = 4.53805, linetype=3) + #mM of EC50 times 1.6
+  geom_vline(xintercept = 5.10531, linetype=3) + #mM of EC50 times 1.8
+  geom_function(fun = ~ my_fn(max=0.3332, c=.x, EC50=2.831324, beta=11.62968)) +
+  geom_point(size=4.5) +
+  labs(x="Metal Concentration (mM)\nStressor Instensity (x*EC50)", y="m") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,5.67), 
+                     expand = c(0, 0),
+                     breaks = Ni_labels$x,
+                     labels = Ni_labels$label,
+                     minor_breaks = NULL) + 
+  scale_y_continuous(limits = c(0,0.34), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3))) +
+  theme_bw(base_size = 13) +
+  theme(legend.position="none",
+        axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        panel.grid = element_blank())
+
+Zn_labels <- data.frame(
+  x = c(0,0.96909,1.93819,2.90728,3.87637,4.84546,5.81456,6.78365,7.75274,8.72183,0.96909,1.93819,2.90728,3.87637,4.84546,5.81456,6.78365,7.75274,8.72183),
+  label = c("0","0.97","1.94","2.91","3.88","4.85","5.81","6.78","7.75","8.72","\n0.2","\n0.4","\n0.6","\n0.8","\n1","\n1.2","\n1.4","\n1.6","\n1.8"))
+S4B6 <- vgraph_Zn %>%
+  ggplot(aes(x=mM, y=Mean, shape=as.character(trial), color=conc)) +
+  geom_rect(aes(ymin =0, ymax=0.029, xmin=0, xmax=9.69), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_rect(aes(ymin = 0.312, ymax=0.34, xmin=0, xmax=9.69), fill="grey90", color="transparent", alpha=0.25) + 
+  geom_vline(xintercept = 0.96909, linetype=3) + #mM of EC50 times 0.2
+  geom_vline(xintercept = 1.93819, linetype=3) + #mM of EC50 times 0.4
+  geom_vline(xintercept = 2.90728, linetype=3) + #mM of EC50 times 0.6
+  geom_vline(xintercept = 3.87637, linetype=3) + #mM of EC50 times 0.8
+  geom_vline(xintercept = 4.84546, size=2, color="#A880FF") + #mM of EC50 times 1
+  geom_vline(xintercept = 5.81456, linetype=3) + #mM of EC50 times 1.2
+  geom_vline(xintercept = 6.78365, linetype=3) + #mM of EC50 times 1.4
+  geom_vline(xintercept = 7.75274, linetype=3) + #mM of EC50 times 1.6
+  geom_vline(xintercept = 8.72183, linetype=3) + #mM of EC50 times 1.8
+  geom_function(fun = ~ my_fn(max=0.323794, c=.x, EC50=4.866965, beta=4.579189)) +
+  geom_point(size=4.5) +
+  labs(x="Metal Concentration (mM)\nStressor Instensity (x*EC50)", y="m") +
+  scale_color_manual(values=bw_palette_5conc) +
+  scale_x_continuous(limits = c(0,9.69), 
+                     expand = c(0, 0),
+                     breaks = Zn_labels$x,
+                     labels = Zn_labels$label,
+                     minor_breaks = NULL) + 
+  scale_y_continuous(limits = c(0,0.34), expand = c(0, 0), breaks = (c(0.0,0.05,0.1,0.15,0.2,0.25,0.3))) +
+  theme_bw(base_size = 13) +
+  theme(legend.position="none",
+        axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        panel.grid = element_blank())
+```
+%##FigS4_cowplot - NEED TO FINISH
+%```{r}
+%#figS4B <- 
+S4B_plots <- plot_grid(S4B1, S4B2, S4B3, S4B4, S4B5, S4B6, nrow = 2, rel_widths = c(1,0.88,0.88,1,0.88,0.88))
+S4B_complete <- plot_grid(NULL, S4B_plots, nrow=1, rel_widths = c(0.05, 1)) +
+  #draw_te
+%```
+
+#Figure S5
+```{r}
+CuNi_all <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="CuNi" | metal=="Ni") %>% 
+  mutate(combo="CuNi")
+CuNi_all$conc <- as.integer(CuNi_all$conc)
+
+CoZn_all <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="CoZn" | metal=="Zn") %>% 
+  mutate(combo="CoZn")
+CoZn_all$conc <- as.integer(CoZn_all$conc)
+
+CoCu_all <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="CoCu" | metal=="Cu") %>% 
+  mutate(combo="CoCu")
+CoCu_all$conc <- as.integer(CoCu_all$conc)
+
+CdCo_all <- combodata_avg %>% 
+  filter(metal=="Cd" | metal=="CdCo" | metal=="Co") %>% 
+  mutate(combo="CdCo")
+CdCo_all$conc <- as.integer(CdCo_all$conc)
+
+CoNi_all <- combodata_avg %>% 
+  filter(metal=="Co" | metal=="CoNi" | metal=="Ni") %>% 
+  mutate(combo="CoNi")
+CoNi_all$conc <- as.integer(CoNi_all$conc)
+
+CuZn_all <- combodata_avg %>% 
+  filter(metal=="Cu" | metal=="CuZn" | metal=="Zn") %>% 
+  mutate(combo="CuZn")
+CuZn_all$conc <- as.integer(CuZn_all$conc)
+
+deltas_unavg_all <- rbind(deltas_unavg_4conc, deltas_conc5)
+deltas_unavg_all$conc <- as.integer(deltas_unavg_all$conc)
+
+showcase_deltas <- rbind(CuNi_all, CoZn_all, CoCu_all, CdCo_all, CoNi_all, CuZn_all) %>%
+  mutate(metal = case_when(metal==str_extract(combo, "^.{2}") ~ "Met1",
+                           metal==combo ~ "Combo",
+                           metal==str_extract(combo, ".{2}$") ~ "Met2")) %>% 
+  left_join(deltas_unavg_all, by=join_by(combo, conc, trial))
+
+showcase_deltas$conc <- as.integer(showcase_deltas$conc)
+showcase_deltas$metal <- factor(showcase_deltas$metal, levels=c("Met1", "Combo", "Met2"))
+showcase_deltas$trial <- as.character(showcase_deltas$trial)
+showcase_deltas$conc <- factor(showcase_deltas$conc, levels=c("5","4","3","2","1"))
+
+showcase_deltas_conc5_trial1 <- showcase_deltas %>% filter(conc==5 & trial=="one") 
+showcase_deltas_conc5_trial2 <- showcase_deltas %>% filter(conc==5 & trial=="two")
+
+showcase_deltas %>%   
+  filter(conc!=5) %>% 
+  ggplot(aes(x=metal, y=Mean_r, group=interaction(combo,conc,trial), colour=delta_r)) +
+  geom_hline(yintercept = 0.0238344) +
+  geom_line(linewidth=1) + 
+  geom_point(size=3, shape=20) + 
+  geom_line(data=showcase_deltas_conc5_trial2, linewidth=1.2) + 
+  geom_point(data=showcase_deltas_conc5_trial2, size=3, shape=15) + 
+  geom_line(data=showcase_deltas_conc5_trial1, linewidth=1.2) + 
+  geom_point(data=showcase_deltas_conc5_trial1, size=3, shape=15) + 
+  #scale_colour_gradient(low = "#262626", high = "#d9d9d9") +
+  scale_x_discrete(labels=c("Met1" = "Metal 1", "Combo" = "Combo", "Met2" = "Metal 2")) +
+  labs(x="Environment", y="r", color="\u03b4", shape="trial") +
+  theme_light() +
+  theme(panel.grid.minor = element_blank(),
+        axis.title.y=element_text(face="bold.italic"),
+        axis.title.x=element_text(face="bold")) +
+  guides(color = guide_colorbar(order = 1),
+         shape = guide_legend(order = 0)) +
+  facet_wrap(~combo, ncol=3)
+ggsave("FigureOutput/FigS5.png", height=5, width=7,units="in", dpi=700)
+```
+#Figure S6
+##lm stats for delta over concentrations
+```{r}
+#individual lms
+test_CdCo <- deltas_unavg_4conc %>% filter(combo=="CdCo")
+lm_CdCo <- lm(delta_r~as.numeric(conc), data=test_CdCo)
+lm_CdCo %>% summary()
+
+test_CdCu <- deltas_unavg_4conc %>% filter(combo=="CdCu")
+lm_CdCu <- lm(delta_r~as.numeric(conc), data=test_CdCu) 
+lm_CdCu %>% summary() # p<0.01 ** slope=+0.10338
+
+test_CdMn <- deltas_unavg_4conc %>% filter(combo=="CdMn")
+lm_CdMn <- lm(delta_r~as.numeric(conc), data=test_CdMn) 
+lm_CdMn %>% summary()
+
+test_CdNi <- deltas_unavg_4conc %>% filter(combo=="CdNi")
+lm_CdNi <- lm(delta_r~as.numeric(conc), data=test_CdNi) 
+lm_CdNi %>% summary()
+
+test_CdZn <- deltas_unavg_4conc %>% filter(combo=="CdZn")
+lm_CdZn <- lm(delta_r~as.numeric(conc), data=test_CdZn) 
+lm_CdZn %>% summary() # p<0.05 * slope=+0.09385
+
+test_CoCu <- deltas_unavg_4conc %>% filter(combo=="CoCu")
+lm_CoCu <- lm(delta_r~as.numeric(conc), data=test_CoCu) 
+lm_CoCu %>% summary()
+
+test_CoMn <- deltas_unavg_4conc %>% filter(combo=="CoMn")
+lm_CoMn <- lm(delta_r~as.numeric(conc), data=test_CoMn)
+lm_CoMn %>% summary()
+
+test_CoNi <- deltas_unavg_4conc %>% filter(combo=="CoNi")
+lm_CoNi <- lm(delta_r~as.numeric(conc), data=test_CoNi)
+lm_CoNi%>% summary() # p<0.10 . slope=-0.10039
+
+test_CoZn <- deltas_unavg_4conc %>% filter(combo=="CoZn")
+lm_CoZn <- lm(delta_r~as.numeric(conc), data=test_CoZn)
+lm_CoZn %>% summary() # p<0.10 . slope=-0.04022
+
+test_CuMn <- deltas_unavg_4conc %>% filter(combo=="CuMn")
+lm_CuMn <- lm(delta_r~as.numeric(conc), data=test_CuMn)
+lm_CuMn %>% summary()
+
+test_CuNi <- deltas_unavg_4conc %>% filter(combo=="CuNi")
+lm_CuNi <- lm(delta_r~as.numeric(conc), data=test_CuNi)
+lm_CuNi %>% summary()
+
+test_CuZn <- deltas_unavg_4conc %>% filter(combo=="CuZn")
+lm_CuZn <- lm(delta_r~as.numeric(conc), data=test_CuZn)
+lm_CuZn %>% summary()# p<0.05 * slope=-0.018764
+
+test_MnNi <- deltas_unavg_4conc %>% filter(combo=="MnNi")
+lm_MnNi <- lm(delta_r~as.numeric(conc), data=test_MnNi)
+lm_MnNi %>% summary()# p<0.05 * slope=+0.08334
+test_MnZn <- deltas_unavg_4conc %>% filter(combo=="MnZn")
+lm_MnZn <- lm(delta_r~as.numeric(conc), data=test_MnZn)
+lm_MnZn %>% summary()# p<0.05 * slope=-0.04385
+
+test_NiZn <- deltas_unavg_4conc %>% filter(combo=="NiZn")
+lm_NiZn <- lm(delta_r~as.numeric(conc), data=test_NiZn)
+lm_NiZn %>% summary()
+
+lm_results_table <- deltas_unavg_4conc %>% ungroup() %>% select(combo) %>% distinct()
+lm_results_table$pval <- c(summary(lm_CdCo)$coefficients[2,4],
+                           summary(lm_CdCu)$coefficients[2,4],
+                           summary(lm_CdMn)$coefficients[2,4],
+                           summary(lm_CdNi)$coefficients[2,4],
+                           summary(lm_CdZn)$coefficients[2,4],
+                           summary(lm_CoCu)$coefficients[2,4],
+                           summary(lm_CoMn)$coefficients[2,4],
+                           summary(lm_CoNi)$coefficients[2,4],
+                           summary(lm_CoZn)$coefficients[2,4],
+                           summary(lm_CuMn)$coefficients[2,4],
+                           summary(lm_CuNi)$coefficients[2,4],
+                           summary(lm_CuZn)$coefficients[2,4],
+                           summary(lm_MnNi)$coefficients[2,4],
+                           summary(lm_MnZn)$coefficients[2,4],
+                           summary(lm_NiZn)$coefficients[2,4])
+lm_results_table$slope <- c(summary(lm_CdCo)$coefficients[2,1],
+                            summary(lm_CdCu)$coefficients[2,1],
+                            summary(lm_CdMn)$coefficients[2,1],
+                            summary(lm_CdNi)$coefficients[2,1],
+                            summary(lm_CdZn)$coefficients[2,1],
+                            summary(lm_CoCu)$coefficients[2,1],
+                            summary(lm_CoMn)$coefficients[2,1],
+                            summary(lm_CoNi)$coefficients[2,1],
+                            summary(lm_CoZn)$coefficients[2,1],
+                            summary(lm_CuMn)$coefficients[2,1],
+                            summary(lm_CuNi)$coefficients[2,1],
+                            summary(lm_CuZn)$coefficients[2,1],
+                            summary(lm_MnNi)$coefficients[2,1],
+                            summary(lm_MnZn)$coefficients[2,1],
+                            summary(lm_NiZn)$coefficients[2,1])
+```
+## figS6 - trends in delta over concentrations
+```{r}
+#final graph reflecting significant trends
+deltas_unavg_trends <- deltas_unavg_4conc %>% 
+  mutate(sig=case_when(combo=="CdCu" ~ "a",
+                       combo=="CdZn" ~ "a",
+                       combo=="CuZn" ~ "a",
+                       combo=="MnNi" ~ "a",
+                       combo=="MnZn" ~ "a",
+                       .default = "b"))
+
+deltas_unavg_trends %>% 
+  ggplot(aes(x=as.numeric(conc), y=delta_r, color=combo)) +
+  geom_smooth(method = "lm", aes(linetype = sig), fill="grey80") +  
+  geom_point() +
+  scale_color_manual(values=combo_alphabet_palette) +
+  labs(x="Concentration level", y="\u03b4") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank(),
+        axis.title = element_text(face="bold")) +
+  facet_wrap(~combo, ncol=5, nrow=3)
+ggsave("FigureOutput/FigS6.pdf", height=6, width=7, units="in", dpi=700)
+```
+###variance of delta in each combo
+```{r}
+d_vars <- c(var(test_CdCo$delta_r),
+            var(test_CdCu$delta_r),
+            var(test_CdMn$delta_r),
+            var(test_CdNi$delta_r),
+            var(test_CdZn$delta_r),
+            var(test_CoCu$delta_r),
+            var(test_CoMn$delta_r),
+            var(test_CoNi$delta_r),
+            var(test_CoZn$delta_r),
+            var(test_CuMn$delta_r),
+            var(test_CuNi$delta_r),
+            var(test_CuZn$delta_r),
+            var(test_MnNi$delta_r),
+            var(test_MnZn$delta_r),
+            var(test_NiZn$delta_r))
+
+d_vars
+mean(d_vars)
+sd(d_vars)
+```
+#Figure S8
+relationship a and delta calculated from r or OD
+```{r}
+aOD <- read.csv("DataInput/ParameterTableOD.csv") %>% select(Combo, a) %>% 
+  rename("combo" = Combo) %>% 
+  rename("a_OD" = a)
+deltaOD <- delta_OD_df %>%
+  filter(conc!=5) %>% 
+  group_by(combo) %>% 
+  summarise(avg_delta_changeOD = mean(delta_changeOD))
+
+a_comparison <- a_values %>%
+  rename(a_r = "a") %>% 
+  left_join(aOD)
+
+figS8A <- 
+  a_comparison %>% 
+  ggplot(aes(x=a_r, y=a_OD)) + 
+  geom_hline(yintercept = 0, alpha=0.2) +
+  geom_vline(xintercept = 0, alpha=0.2) +
+  geom_abline(slope=1, linetype=3) +
+  geom_point(aes(color=combo), size=4) +
+  geom_abline(slope=1.1924, intercept=0.1086) +
+  #geom_smooth(method = "lm", se=F, color="black") +
+  scale_color_manual(values=combo_alphabet_palette) +
+  labs(x="a(r)", y="a(OD)") +
+  xlim(-2.81,3.5) +
+  ylim(-2.81,3.5) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        aspect.ratio = 1,
+        axis.title=element_text(face="bold"),
+        legend.position="none")
+
+########
+
+delta_comparison <- deltas_avg %>% 
+  select(combo, avg_delta) %>%
+  rename(avg_delta_r="avg_delta") %>% 
+  distinct() %>% 
+  left_join(deltaOD)
+
+figS8B <- delta_comparison %>% 
+  ggplot(aes(x=avg_delta_r, y=avg_delta_changeOD)) + 
+  geom_hline(yintercept = 0, alpha=0.2) +
+  geom_vline(xintercept = 0, alpha=0.2) +
+  geom_abline(slope=1, linetype=3) +
+  geom_point(aes(color=combo), size=4) +
+  geom_abline(slope=1.1618, intercept=-0.0833) +
+  #geom_smooth(method = "lm", se=F, color="black") +
+  scale_color_manual(values=combo_alphabet_palette) +
+  scale_x_continuous(breaks = c(0.0,0.5,1.0), limits = c(-0.22,1)) +
+  scale_y_continuous(breaks = c(0.0,0.5,1.0), limits = c(-0.22,1)) +
+  labs(x="delta(r)", y="delta(OD)") +
+  #xlim(-0.22,0.95) +
+  #ylim(-0.22,0.95) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        aspect.ratio = 1,
+        axis.title=element_text(face="bold"),
+        legend.position="none")
+
+figS8_graphs <- plot_grid(figS8A, figS8B, labels = "AUTO", nrow = 1, rel_widths = c(1,1.007))
+plot_grid(figS8_graphs, NULL, fig5_legend, nrow = 1, rel_widths = c(1,0.01,0.1))
+ggsave2("FigureOutput/FigS8.pdf", height = 4.9, width = 9.5, units = "in", dpi=1000)
+
+
+#DEMING REGRESSIONS
+(sd(a_comparison$a_OD)^2)/(sd(a_comparison$a_r)^2) #calculating error ratio
+dem_reg(x="a_r", y="a_OD", data=a_comparison, error.ratio = 1.27)
+(sd(delta_comparison$avg_delta_changeOD)^2)/(sd(delta_comparison$avg_delta_r)^2) #calculating error ratio
+dem_reg(x="avg_delta_r", y="avg_delta_changeOD", data=delta_comparison, error.ratio = 1.31)
+```
+
+#Figure S9
+literature review
+```{r}
+literature <- read.csv("DataInput/metal_mixture_literature_data.csv") %>% 
+  left_join(a_values) %>% 
+  rename(a_value = "a") %>% 
+  mutate(interaction.value=case_when(interaction=="antagonism" ~ 1,
+                                     interaction=="additivity/antagonism" ~ 0.5,
+                                     interaction=="additivity" ~ 0,
+                                     interaction=="additivity/synergism" ~ -0.5,
+                                     interaction=="synergism" ~ -1,
+                                     .default=NA)) %>% 
+  filter(First.author!="Kahn") %>% 
+  filter(Year>1999) 
+  
+lit_counts <- literature %>% 
+  group_by(combo) %>% 
+  summarise(ncombo=n())
+
+threecombos <- literature %>% 
+  filter(combo=="CdCu" | combo=="CdZn" | combo=="CuZn") 
+three_combos_avg <- threecombos %>% 
+  group_by(combo) %>% 
+  summarise(avg_synant=mean(interaction.value)) %>% 
+  left_join(a_values) %>% 
+  left_join(lit_counts) %>% 
+  rename(a_value = "a")
+
+lm(avg_synant ~ a_value, data=three_combos_avg) %>% summary()
+
+three_combos_avg %>% 
+  ggplot(aes(x=a_value, y=avg_synant, color=combo)) +
+  geom_smooth(method="lm", se=F, data=three_combos_avg, inherit.aes = F, aes(x=a_value, y=avg_synant), color="black") +
+  geom_point(size=6) +
+  geom_jitter(data=threecombos, aes(x=a_value, y=interaction.value), height=0.02, width=0.02, size=1, color="black") +
+  scale_color_manual(values=c("#90B927","#D48D8B","#3C99DB")) +
+  labs(x="a",y="Interaction type", color="Metal\ncombination") +
+  theme_bw(base_size=14) +
+  theme(panel.grid = element_blank(),
+        axis.title.x = element_text(face="bold.italic", family="serif", size=16),
+        axis.title.y = element_text(face="bold"))
+ggsave("FigureOutput/FigS9.pdf", height=5, width=6, units = "in")
+```
