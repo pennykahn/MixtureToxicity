@@ -211,7 +211,7 @@ combodata_unavg <- rbind(trial1_unavg, trial2_unavg) %>%
 
 combodata_avg <- rbind(averages_trial1, averages_trial2) 
 combodata_avg$conc <- as.character(combodata_avg$conc)
-write_csv(combodata_avg, "DataOutput/vgraph_growthrates_avg.csv")
+write_csv(combodata_avg, "DataOutput/growthdata.csv")
 ```
 ## Examining blanks
 ```{r}
@@ -234,7 +234,7 @@ blanks2 <- blanks2_unavg %>%
             SE = std.error(maxSlope))
 
 blanks_unavg <- rbind(blanks1_unavg,blanks2_unavg) %>% select(c(metal, yeast, maxSlope))
-blanks_unavg %>% write_csv("DataOutput/vgraph_blanks.csv")
+blanks_unavg %>% write_csv("DataOutput/growthdata_blanks.csv")
 
 blanks1 %>% ggplot(aes(x=metal, y=avg_blank)) +
   geom_point() +
@@ -738,7 +738,7 @@ NiZn <- combodata_avg %>%
   mutate(delta_r=1-(combo_r/((met1_r+met2_r)/2)))
 
 delta_r_df <- rbind(CdCo, CdCu, CdMn, CdNi, CdZn, CoCu, CoMn, CoNi, CoZn, CuMn, CuNi, CuZn, MnNi, MnZn, NiZn)
-delta_r_df %>% write.csv("DataOutput/delta_r_df.csv")
+delta_r_df %>% write.csv("DataOutput/delta_r.csv")
 ```
 ###delta_OD
 ```{r}
@@ -893,6 +893,8 @@ NiZn <- combodata_avg %>%
   mutate(delta_changeOD=1-(combo_changeOD/((met1_changeOD+met2_changeOD)/2)))
 
 delta_OD_df <- rbind(CdCo, CdCu, CdMn, CdNi, CdZn, CoCu, CoMn, CoNi, CoZn, CuMn, CuNi, CuZn, MnNi, MnZn, NiZn)
+
+delta_OD_df %>% write.csv("DataOutput/delta_OD.csv")
 ```
 
 ###normality of delta
@@ -1001,8 +1003,7 @@ model_delta_a$timesEC50 <- gsub("X", "", model_delta_a$timesEC50)
 a_values <- model_delta_a %>% 
   select(combo, a) %>% 
   distinct() 
-
-
+a_values %>% write_csv("DataOutput/a_values.csv")
 
 EC50s <-read.csv("DataInput/ModelOutput_EC50s.csv") 
 avg_EC50s <- EC50s %>% 
@@ -1776,6 +1777,7 @@ mydata %>%
   scale_x_discrete(labels=c("1" = "1 (0.25)", "2" = "2 (0.20)", "3" = "3 (0.15)", "4" = "4 (0.10)", "5" = "5 (0.05)")) +
   theme_bw(base_size=14) +
   theme(legend.position="none")
+ggsave("FigureOutput/FigS3/figS3H.jpg", width=13.575, height=3, units="in", dpi=700)
 ```
 ###confint stat for diff from target
 ```{r}
